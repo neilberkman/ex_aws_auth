@@ -1,8 +1,18 @@
 defmodule AWSAuth.QueryParameters do
   @moduledoc false
 
-  #http://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-query-string-auth.html
-  def sign(access_key, secret_key, http_method, url, region, service, headers, request_time, payload) do
+  # http://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-query-string-auth.html
+  def sign(
+        access_key,
+        secret_key,
+        http_method,
+        url,
+        region,
+        service,
+        headers,
+        request_time,
+        payload
+      ) do
     uri = URI.parse(url)
 
     http_method = String.upcase(http_method)
@@ -11,34 +21,46 @@ defmodule AWSAuth.QueryParameters do
 
     headers = Map.put_new(headers, "host", uri.host)
 
-    amz_date = request_time |> AWSAuth.Utils.format_time
-    date = request_time |> AWSAuth.Utils.format_date
+    amz_date = request_time |> AWSAuth.Utils.format_time()
+    date = request_time |> AWSAuth.Utils.format_date()
 
     scope = "#{date}/#{region}/#{service}/aws4_request"
 
-    params = case uri.query do
-               nil ->
-                 Map.new
-               _ ->
-                 URI.decode_query(uri.query)
-             end
+    params =
+      case uri.query do
+        nil ->
+          Map.new()
 
-    params = params
-    |> Map.put("X-Amz-Algorithm", "AWS4-HMAC-SHA256")
-    |> Map.put("X-Amz-Credential", "#{access_key}/#{scope}")
-    |> Map.put("X-Amz-Date", amz_date)
-    |> Map.put("X-Amz-Expires", "86400")
-    |> Map.put("X-Amz-SignedHeaders", "#{Map.keys(headers) |> Enum.join(";")}")
+        _ ->
+          URI.decode_query(uri.query)
+      end
 
-    hashed_payload = if service == "s3",
-      do: :unsigned,
-      else: AWSAuth.Utils.hash_sha256(payload)
+    params =
+      params
+      |> Map.put("X-Amz-Algorithm", "AWS4-HMAC-SHA256")
+      |> Map.put("X-Amz-Credential", "#{access_key}/#{scope}")
+      |> Map.put("X-Amz-Date", amz_date)
+      |> Map.put("X-Amz-Expires", "86400")
+      |> Map.put("X-Amz-SignedHeaders", "#{Map.keys(headers) |> Enum.join(";")}")
 
-    string_to_sign = AWSAuth.Utils.build_canonical_request(http_method, uri.path, params, headers, hashed_payload)
-    |> AWSAuth.Utils.build_string_to_sign(amz_date, scope)
+    hashed_payload =
+      if service == "s3",
+        do: :unsigned,
+        else: AWSAuth.Utils.hash_sha256(payload)
 
-    signature = AWSAuth.Utils.build_signing_key(secret_key, date, region, service)
-    |> AWSAuth.Utils.build_signature(string_to_sign)
+    string_to_sign =
+      AWSAuth.Utils.build_canonical_request(
+        http_method,
+        uri.path,
+        params,
+        headers,
+        hashed_payload
+      )
+      |> AWSAuth.Utils.build_string_to_sign(amz_date, scope)
+
+    signature =
+      AWSAuth.Utils.build_signing_key(secret_key, date, region, service)
+      |> AWSAuth.Utils.build_signature(string_to_sign)
 
     params = params |> Map.put("X-Amz-Signature", signature)
     query_string = URI.encode_query(params) |> String.replace("+", "%20")
