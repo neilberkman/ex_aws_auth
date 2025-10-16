@@ -1,33 +1,63 @@
+## [1.0.0] - 2025-01-15
+
+### Initial Release
+
+This is a fork of the original `aws_auth` package by Bryan Joseph, incorporating OTP 27 compatibility fixes from Rodrigo Zampieri Castilho's fork. Published as `ex_aws_auth` to make this maintained version available on Hex.
+
+### Changed
+
+- Updated minimum Elixir requirement to ~> 1.14
+- Modernized all dependencies (ex_doc ~> 0.34, credo ~> 1.7, excoveralls ~> 0.18)
+- Migrated from deprecated `Mix.Config` to `import Config`
+
+### Added
+
+- Quokka ~> 2.11 formatter plugin for code quality
+- dialyxir ~> 1.4 for static analysis
+- Comprehensive .formatter.exs configuration
+
+---
+
+## Historical Changelog (from original `aws_auth` package)
+
 ## [0.6.1]
 
 ### Fixed
+
 - Correctly handle NaiveDateTimes with ms precision (thanks to [@radar](https://github.com/radar))
 
 ## [0.6.0]
 
 ### Changed
+
 - Requires Elixir 1.3 or higher
 
 ### Fixed
+
 - Removed timex dependency and using Elixir's built in datetime functions (thanks to [@radar](https://github.com/radar))
 
 ## [0.5.1]
 
 ### Fixed
+
 - Use Timex.DateTime.now, rather than Timex.DateTime.today (thanks to [@radar](https://github.com/radar))
 
 ## [0.5.0]
 
 ### Fixed
-- `x-amz-date` using Date instead of DateTime  (thanks to [@radar](https://github.com/radar))
+
+- `x-amz-date` using Date instead of DateTime (thanks to [@radar](https://github.com/radar))
 
 ### Changed
+
 - Dependency updates (thanks to [@radar](https://github.com/radar))
 
 ## [0.4.0]
 
 ### Fixed
+
 - Signing works for more than just S3 from @kenta-aktsk
 
 ### Changed
+
 - headers params for `sign_url` and `sign_authorization_header` now expects a map instead of a Dict

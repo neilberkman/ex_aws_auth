@@ -1,5 +1,4 @@
 defmodule AWSAuth do
-
   @moduledoc """
   Signs urls or authentication headers for use with AWS requests
   """
@@ -25,7 +24,7 @@ defmodule AWSAuth do
   If only the host is needed, then you don't have to supply it and the host from the url will be used.
   """
   def sign_url(access_key, secret_key, http_method, url, region, service) do
-    sign_url(access_key, secret_key, http_method, url, region, service, Map.new)
+    sign_url(access_key, secret_key, http_method, url, region, service, Map.new())
   end
 
   def sign_url(access_key, secret_key, http_method, url, region, service, headers) do
@@ -36,8 +35,28 @@ defmodule AWSAuth do
     sign_url(access_key, secret_key, http_method, url, region, service, headers, request_time, "")
   end
 
-  def sign_url(access_key, secret_key, http_method, url, region, service, headers, request_time, payload) do
-    AWSAuth.QueryParameters.sign(access_key, secret_key, http_method, url, region, service, headers, request_time, payload)
+  def sign_url(
+        access_key,
+        secret_key,
+        http_method,
+        url,
+        region,
+        service,
+        headers,
+        request_time,
+        payload
+      ) do
+    AWSAuth.QueryParameters.sign(
+      access_key,
+      secret_key,
+      http_method,
+      url,
+      region,
+      service,
+      headers,
+      request_time,
+      payload
+    )
   end
 
   @doc """
@@ -65,22 +84,86 @@ defmodule AWSAuth do
   `payload` (optional. defaults to `""`): The contents of the payload if there is one.
   """
   def sign_authorization_header(access_key, secret_key, http_method, url, region, service) do
-    sign_authorization_header(access_key, secret_key, http_method, url, region, service, Map.new)
+    sign_authorization_header(
+      access_key,
+      secret_key,
+      http_method,
+      url,
+      region,
+      service,
+      Map.new()
+    )
   end
 
-  def sign_authorization_header(access_key, secret_key, http_method, url, region, service, headers) do
-    sign_authorization_header(access_key, secret_key, http_method, url, region, service, headers, "")
+  def sign_authorization_header(
+        access_key,
+        secret_key,
+        http_method,
+        url,
+        region,
+        service,
+        headers
+      ) do
+    sign_authorization_header(
+      access_key,
+      secret_key,
+      http_method,
+      url,
+      region,
+      service,
+      headers,
+      ""
+    )
   end
 
-  def sign_authorization_header(access_key, secret_key, http_method, url, region, service, headers, payload) do
-    sign_authorization_header(access_key, secret_key, http_method, url, region, service, headers, payload, current_time())
+  def sign_authorization_header(
+        access_key,
+        secret_key,
+        http_method,
+        url,
+        region,
+        service,
+        headers,
+        payload
+      ) do
+    sign_authorization_header(
+      access_key,
+      secret_key,
+      http_method,
+      url,
+      region,
+      service,
+      headers,
+      payload,
+      current_time()
+    )
   end
 
-  def sign_authorization_header(access_key, secret_key, http_method, url, region, service, headers, payload, request_time) do
-    AWSAuth.AuthorizationHeader.sign(access_key, secret_key, http_method, url, region, service, payload, headers, request_time)
+  def sign_authorization_header(
+        access_key,
+        secret_key,
+        http_method,
+        url,
+        region,
+        service,
+        headers,
+        payload,
+        request_time
+      ) do
+    AWSAuth.AuthorizationHeader.sign(
+      access_key,
+      secret_key,
+      http_method,
+      url,
+      region,
+      service,
+      payload,
+      headers,
+      request_time
+    )
   end
 
   defp current_time do
-    DateTime.utc_now |> DateTime.to_naive
+    DateTime.utc_now() |> DateTime.to_naive()
   end
 end

@@ -2,26 +2,27 @@ defmodule AWSAuth.Utils do
   @moduledoc false
 
   def build_canonical_request(http_method, path, params, headers, hashed_payload) do
-
     query_params = URI.encode_query(params) |> String.replace("+", "%20")
 
-    header_params = Enum.map(headers, fn({key, value}) -> "#{String.downcase(key)}:#{String.trim(value)}"  end)
-    |> Enum.sort(&(&1 < &2))
-    |> Enum.join("\n")
+    header_params =
+      Enum.map(headers, fn {key, value} -> "#{String.downcase(key)}:#{String.trim(value)}" end)
+      |> Enum.sort(&(&1 < &2))
+      |> Enum.join("\n")
 
-    signed_header_params = Enum.map(headers, fn({key, _}) -> String.downcase(key)  end)
-    |> Enum.sort(&(&1 < &2))
-    |> Enum.join(";")
+    signed_header_params =
+      Enum.map(headers, fn {key, _} -> String.downcase(key) end)
+      |> Enum.sort(&(&1 < &2))
+      |> Enum.join(";")
 
-    hashed_payload = if hashed_payload == :unsigned,
-      do: "UNSIGNED-PAYLOAD",
-      else: hashed_payload
+    hashed_payload =
+      if hashed_payload == :unsigned,
+        do: "UNSIGNED-PAYLOAD",
+        else: hashed_payload
 
     encoded_path =
       path
       |> String.split("/")
-      |> Enum.map(fn (segment) -> URI.encode_www_form(segment) end)
-      |> Enum.join("/")
+      |> Enum.map_join("/", fn segment -> URI.encode_www_form(segment) end)
 
     "#{http_method}\n#{encoded_path}\n#{query_params}\n#{header_params}\n\n#{signed_header_params}\n#{hashed_payload}"
   end
@@ -40,12 +41,12 @@ defmodule AWSAuth.Utils do
 
   def build_signature(signing_key, string_to_sign) do
     hmac_sha256(signing_key, string_to_sign)
-    |> bytes_to_string
+    |> bytes_to_string()
   end
 
   def hash_sha256(data) do
     :crypto.hash(:sha256, data)
-    |> bytes_to_string
+    |> bytes_to_string()
   end
 
   if Code.ensure_loaded?(:crypto) and function_exported?(:crypto, :mac, 4) do
@@ -53,25 +54,27 @@ defmodule AWSAuth.Utils do
   else
     def hmac_sha256(key, data), do: :crypto.hmac(:sha256, key, data)
   end
-  
+
   def bytes_to_string(bytes) do
     Base.encode16(bytes, case: :lower)
   end
 
   def format_time(time) do
-    formatted_time = time
-    |> NaiveDateTime.to_iso8601
-    |> String.split(".")
-    |> List.first
-    |> String.replace("-", "")
-    |> String.replace(":", "")
+    formatted_time =
+      time
+      |> NaiveDateTime.to_iso8601()
+      |> String.split(".")
+      |> List.first()
+      |> String.replace("-", "")
+      |> String.replace(":", "")
+
     formatted_time <> "Z"
   end
 
   def format_date(date) do
     date
-    |> NaiveDateTime.to_date
-    |> Date.to_iso8601
+    |> NaiveDateTime.to_date()
+    |> Date.to_iso8601()
     |> String.replace("-", "")
   end
 end

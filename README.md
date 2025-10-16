@@ -1,9 +1,24 @@
-AWSAuth
-=======
+# ex_aws_auth
+
+[![Hex.pm](https://img.shields.io/hexpm/v/ex_aws_auth)](https://hex.pm/packages/ex_aws_auth)
+[![Hexdocs.pm](https://img.shields.io/badge/docs-hexdocs.pm-purple)](https://hexdocs.pm/ex_aws_auth)
+[![CI](https://github.com/neilberkman/ex_aws_auth/actions/workflows/elixir.yml/badge.svg)](https://github.com/neilberkman/ex_aws_auth/actions)
 
 A small library used to sign AWS request urls using AWS Signature Version 4.
 
+## Why `ex_aws_auth`?
+
+The original `aws_auth` package was created by [**Bryan Joseph**](https://github.com/bryanjos). Unfortunately, it is no longer actively maintained and has become incompatible with modern versions of Erlang/OTP due to deprecated crypto functions.
+
+[**Rodrigo Zampieri Castilho**](https://github.com/rzcastilho) forked it and brought it up to date for OTP 27. However, his fork cannot be included as a dependency in packages published on Hex.
+
+This package, `ex_aws_auth`, is published on Hex to make this essential AWS signing functionality available to the broader Elixir community.
+
+Full credit and thanks go to Bryan Joseph for creating the original library and Rodrigo Zampieri Castilho for maintaining compatibility with modern OTP versions.
+
 Takes some inspiration from the [Simplex](https://github.com/adamkittelson/simplex) Library.
+
+## Usage
 
 Does both URL and Authorization Header signing.
 
@@ -21,7 +36,7 @@ Does both URL and Authorization Header signing.
 
 `service`: The AWS service you are trying to access (i.e. s3). Check the url above for names as well.
 
-`headers` (optional): The headers that will be used in the request. Used for signing the request. For signing, host is the only one required unless using any other x-amx-* headers. If host is present here, it will override using the host in the url to attempt signing. If only the host is needed, then you don't have to supply it and the host from the url will be used.
+`headers` (optional): The headers that will be used in the request. Used for signing the request. For signing, host is the only one required unless using any other x-amx-\* headers. If host is present here, it will override using the host in the url to attempt signing. If only the host is needed, then you don't have to supply it and the host from the url will be used.
 
 In most cases, you would probably call it like this (examples using the example access key and secret from AWS):
 
@@ -46,7 +61,6 @@ signed_request = AWSAuth.sign_url("AKIAIOSFODNN7EXAMPLE", "wJalrXUtnFEMI/K7MDENG
 "https://examplebucket.s3.amazonaws.com/test.txt?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAIOSFODNN7EXAMPLE%2F20141219%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20141219T153646Z&X-Amz-Expires=86400&X-Amz-Signature=b05688cc482398bf2d6ff4068560b85b310a6bb24c5d21711b7099ab5e3df510&X-Amz-SignedHeaders=host,x-amx-header"
 ```
 
-
 Using the example from AWS (http://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-query-string-auth.html)
 
 ```elixir
@@ -59,7 +73,6 @@ signed_request = AWSAuth.sign_url("AKIAIOSFODNN7EXAMPLE", "wJalrXUtnFEMI/K7MDENG
   ~N[2013-05-24 00:00:00])
 "https://examplebucket.s3.amazonaws.com/test.txt?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAIOSFODNN7EXAMPLE%2F20130524%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20130524T000000Z&X-Amz-Expires=86400&X-Amz-Signature=aeeed9bbccd4d02ee5c0109b86d86835f995330da4c265957d157751f604d404&X-Amz-SignedHeaders=host"
 ```
-
 
 `AWSAuth.sign_authorization_header(access_key, secret_key, http_method, url, region, service, headers \\ Map.new, payload \\ "")`
 
@@ -76,14 +89,13 @@ signed_request = AWSAuth.sign_url("AKIAIOSFODNN7EXAMPLE", "wJalrXUtnFEMI/K7MDENG
 `service`: The AWS service you are trying to access (i.e. s3). Check the url above for names as well.
 
 `headers` (optional. defaults to `Map.new`): The headers that will be used in the request. Used for signing the request.
-For signing, host is the only one required unless using any other x-amx-* headers.
+For signing, host is the only one required unless using any other x-amx-\* headers.
 If host is present here, it will override using the host in the url to attempt signing.
 Same goes for the x-amz-content-sha256 headers
 If only the host and x-amz-content-sha256 headers are needed, then you don't have to supply it and the host from the url will be used and
 the payload will be hashed to get the x-amz-content-sha256 header.
 
 `payload` (optional. defaults to `""`): The contents of the payload if there is one.
-
 
 ```elixir
 headers = Map.new
