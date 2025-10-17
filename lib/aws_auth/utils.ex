@@ -1,7 +1,58 @@
 defmodule AWSAuth.Utils do
   @moduledoc false
 
+  @doc """
+  Filters out headers that should not be included in signing.
+  AWS infrastructure may add trace headers that would break the signature.
+  """
+  def filter_unsignable_headers(headers) do
+    headers
+    |> Enum.reject(fn {key, _value} ->
+      String.downcase(key) == "x-amzn-trace-id"
+    end)
+    |> Map.new()
+  end
+
+  @doc """
+  Normalizes header values by collapsing multiple consecutive spaces into a single space.
+  This is required by AWS Signature V4 specification.
+  """
+  def normalize_header_values(headers) do
+    headers
+    |> Map.new(fn {key, value} ->
+      normalized_value =
+        value
+        |> to_string()
+        |> remove_dup_spaces()
+
+      {key, normalized_value}
+    end)
+  end
+
+  defp remove_dup_spaces(string) do
+    case Regex.replace(~r/  +/, string, " ") do
+      ^string -> string
+      result -> remove_dup_spaces(result)
+    end
+  end
+
+  @doc """
+  Validates that query parameter keys and values are not lists.
+  Lists in query parameters can cause encoding issues.
+  """
+  def validate_query_params(params) do
+    Enum.each(params, fn {key, value} ->
+      if is_list(key) or is_list(value) do
+        raise ArgumentError,
+              "Query parameter keys and values cannot be lists. Got: #{inspect(key)} => #{inspect(value)}"
+      end
+    end)
+
+    params
+  end
+
   def build_canonical_request(http_method, path, params, headers, hashed_payload) do
+    validate_query_params(params)
     query_params = URI.encode_query(params) |> String.replace("+", "%20")
 
     header_params =

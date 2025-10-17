@@ -4,7 +4,7 @@ defmodule AWSAuth do
   """
 
   @doc """
-  `AWSAuth.sign_url(access_key, secret_key, http_method, url, region, service, headers)`
+  `AWSAuth.sign_url(access_key, secret_key, http_method, url, region, service, headers, request_time, payload, session_token)`
 
   `access_key`: Your AWS Access key
 
@@ -22,6 +22,13 @@ defmodule AWSAuth do
   For signing, host is the only one required unless using any other x-amx-* headers.
   If host is present here, it will override using the host in the url to attempt signing.
   If only the host is needed, then you don't have to supply it and the host from the url will be used.
+
+  `request_time` (optional): NaiveDateTime for the request timestamp. Defaults to current time.
+
+  `payload` (optional. defaults to `""`): The contents of the payload if there is one.
+
+  `session_token` (optional. defaults to `nil`): AWS session token for temporary credentials (from STS).
+  When provided, adds the X-Amz-Security-Token header to the signed request.
   """
   def sign_url(access_key, secret_key, http_method, url, region, service) do
     sign_url(access_key, secret_key, http_method, url, region, service, Map.new())
@@ -46,6 +53,32 @@ defmodule AWSAuth do
         request_time,
         payload
       ) do
+    sign_url(
+      access_key,
+      secret_key,
+      http_method,
+      url,
+      region,
+      service,
+      headers,
+      request_time,
+      payload,
+      nil
+    )
+  end
+
+  def sign_url(
+        access_key,
+        secret_key,
+        http_method,
+        url,
+        region,
+        service,
+        headers,
+        request_time,
+        payload,
+        session_token
+      ) do
     AWSAuth.QueryParameters.sign(
       access_key,
       secret_key,
@@ -55,12 +88,13 @@ defmodule AWSAuth do
       service,
       headers,
       request_time,
-      payload
+      payload,
+      session_token
     )
   end
 
   @doc """
-  `AWSAuth.sign_authorization_header(access_key, secret_key, http_method, url, region, service, headers, payload)`
+  `AWSAuth.sign_authorization_header(access_key, secret_key, http_method, url, region, service, headers, payload, request_time, session_token)`
 
   `access_key`: Your AWS Access key
 
@@ -82,6 +116,11 @@ defmodule AWSAuth do
   the payload will be hashed to get the x-amz-content-sha256 header.
 
   `payload` (optional. defaults to `""`): The contents of the payload if there is one.
+
+  `request_time` (optional): NaiveDateTime for the request timestamp. Defaults to current time.
+
+  `session_token` (optional. defaults to `nil`): AWS session token for temporary credentials (from STS).
+  When provided, adds the X-Amz-Security-Token header to the signed request.
   """
   def sign_authorization_header(access_key, secret_key, http_method, url, region, service) do
     sign_authorization_header(
@@ -150,6 +189,32 @@ defmodule AWSAuth do
         payload,
         request_time
       ) do
+    sign_authorization_header(
+      access_key,
+      secret_key,
+      http_method,
+      url,
+      region,
+      service,
+      headers,
+      payload,
+      request_time,
+      nil
+    )
+  end
+
+  def sign_authorization_header(
+        access_key,
+        secret_key,
+        http_method,
+        url,
+        region,
+        service,
+        headers,
+        payload,
+        request_time,
+        session_token
+      ) do
     AWSAuth.AuthorizationHeader.sign(
       access_key,
       secret_key,
@@ -159,7 +224,8 @@ defmodule AWSAuth do
       service,
       payload,
       headers,
-      request_time
+      request_time,
+      session_token
     )
   end
 
