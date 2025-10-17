@@ -13,7 +13,10 @@ defmodule AWSAuthTest do
         "us-east-1",
         "s3",
         Map.new(),
-        @time
+        @time,
+        "",
+        nil,
+        expires_in: 86_400
       )
       |> URI.parse()
 
@@ -80,7 +83,10 @@ defmodule AWSAuthTest do
         "us-east-1",
         "s3",
         headers,
-        @time
+        @time,
+        "",
+        nil,
+        expires_in: 86_400
       )
       |> URI.parse()
 

@@ -12,6 +12,9 @@ AWS Signature Version 4 signing library for Elixir. Small, focused, and easy to 
 - **Clean API**: Modern credential struct-based interface
 - **Session Tokens**: Full support for temporary AWS credentials (STS)
 - **Flexible Output**: Choose between list, map, or Req-compatible header formats
+- **Smart Defaults**: Auto-detect service and region from AWS URLs
+- **Presigned URLs**: Configurable expiration times (15 min default, up to 7 days)
+- **Streaming Support**: Unsigned payload option for large file uploads
 - **Backward Compatible**: Maintains compatibility with the original `aws_auth` API
 
 ## Installation
@@ -21,7 +24,7 @@ Add `ex_aws_auth` to your dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:ex_aws_auth, "~> 1.2"},
+    {:ex_aws_auth, "~> 1.3"},
     {:req, "~> 0.5"}  # Optional, for Req plugin
   ]
 end
@@ -111,6 +114,61 @@ creds = AWSAuth.Credentials.from_map(%{
 
 ## Advanced Usage
 
+### Auto-Detection of Service and Region
+
+Skip specifying service and region when using standard AWS URLs:
+
+```elixir
+creds = AWSAuth.Credentials.from_env()
+
+# Service and region detected from URL
+signed_url = AWSAuth.sign_url(
+  creds,
+  "GET",
+  "https://s3.us-west-2.amazonaws.com/my-bucket/file.txt",
+  nil  # nil = auto-detect
+)
+
+# Works with any AWS service
+headers = AWSAuth.sign_authorization_header(
+  creds,
+  "POST",
+  "https://bedrock-runtime.us-east-1.amazonaws.com/model/invoke",
+  nil,
+  payload: body
+)
+```
+
+### Presigned URLs with Custom Expiration
+
+Control how long presigned URLs remain valid:
+
+```elixir
+# Default: 15 minutes
+signed_url = AWSAuth.sign_url(creds, "GET", url, "s3")
+
+# Custom expiration: 1 hour
+signed_url = AWSAuth.sign_url(creds, "GET", url, "s3", expires_in: 3600)
+
+# Maximum: 7 days
+signed_url = AWSAuth.sign_url(creds, "GET", url, "s3", expires_in: 604_800)
+```
+
+### Streaming Uploads (Unsigned Payload)
+
+For large file uploads where the payload isn't known upfront:
+
+```elixir
+# Use :unsigned for streaming
+headers = AWSAuth.sign_authorization_header(
+  creds,
+  "PUT",
+  "https://s3.amazonaws.com/bucket/large-file.zip",
+  "s3",
+  payload: :unsigned
+)
+```
+
 ### Session Tokens (STS Temporary Credentials)
 
 Full support for AWS Security Token Service temporary credentials:
@@ -153,11 +211,30 @@ headers = AWSAuth.sign_authorization_header(creds, method, url, service,
 # => %{"authorization" => ["AWS4-HMAC-SHA256 ..."], "x-amz-date" => ["..."]}
 ```
 
-### Region Override
+### Advanced Options
+
+Fine-tune signing behavior for edge cases:
 
 ```elixir
-# Override the region from credentials
-AWSAuth.sign_url(creds, "GET", url, "s3", region: "eu-west-1")
+# Exclude specific headers from signing
+headers = AWSAuth.sign_authorization_header(creds, "POST", url, "service",
+  unsigned_headers: ["user-agent", "accept-encoding"]
+)
+
+# Disable URI path escaping (for pre-encoded paths)
+signed_url = AWSAuth.sign_url(creds, "GET", url, "s3",
+  uri_escape_path: false
+)
+
+# Omit content checksum header (rare)
+headers = AWSAuth.sign_authorization_header(creds, "POST", url, "service",
+  apply_checksum_header: false
+)
+
+# Override region from credentials
+signed_url = AWSAuth.sign_url(creds, "GET", url, "s3",
+  region: "eu-west-1"
+)
 ```
 
 ## Legacy API (Backward Compatibility)
