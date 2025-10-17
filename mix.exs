@@ -1,14 +1,18 @@
 defmodule ExAWSAuth.MixProject do
   use Mix.Project
 
+  @version "1.2.0"
+  @source_url "https://github.com/neilberkman/ex_aws_auth"
+
   def project do
     [
       app: :ex_aws_auth,
-      version: "1.2.0",
+      version: @version,
       elixir: "~> 1.14",
       description: description(),
       package: package(),
       deps: deps(),
+      docs: docs(),
       test_coverage: [tool: ExCoveralls]
     ]
   end
@@ -49,7 +53,22 @@ defmodule ExAWSAuth.MixProject do
       files: ["lib", "mix.exs", "README*", "LICENSE", "CHANGELOG.md"],
       maintainers: ["Neil Berkman"],
       licenses: ["Apache-2.0"],
-      links: %{"GitHub" => "https://github.com/neilberkman/ex_aws_auth"}
+      links: %{"GitHub" => @source_url}
+    ]
+  end
+
+  defp docs do
+    [
+      extras: [
+        "README.md",
+        "CHANGELOG.md"
+      ],
+      main: "readme",
+      source_ref: "v#{@version}",
+      source_url: @source_url,
+      groups_for_extras: [
+        Changelog: ~r/CHANGELOG\.md/
+      ]
     ]
   end
 end
