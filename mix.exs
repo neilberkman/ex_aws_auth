@@ -4,7 +4,7 @@ defmodule ExAWSAuth.MixProject do
   def project do
     [
       app: :ex_aws_auth,
-      version: "1.0.0",
+      version: "1.0.1",
       elixir: "~> 1.14",
       description: description(),
       package: package(),

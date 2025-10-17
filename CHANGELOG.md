@@ -1,3 +1,12 @@
+## [1.0.1] - 2025-01-16
+
+### Changed
+
+- Updated to Elixir 1.19.0 and OTP 28.1 in CI/CD pipeline
+- Updated .tool-versions to Elixir 1.19.0/OTP 28.1
+
+---
+
 ## [1.0.0] - 2025-01-15
 
 ### Initial Release
