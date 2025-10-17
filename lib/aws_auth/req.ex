@@ -148,8 +148,8 @@ defmodule AWSAuth.Req do
         method,
         url,
         service,
-        headers,
-        body,
+        headers: headers,
+        payload: body,
         region: region,
         return_format: :req
       )
