@@ -4,11 +4,15 @@ defmodule AWSAuth.Utils do
   @doc """
   Filters out headers that should not be included in signing.
   AWS infrastructure may add trace headers that would break the signature.
+  Additional headers can be excluded via the unsigned_headers option.
   """
-  def filter_unsignable_headers(headers) do
+  def filter_unsignable_headers(headers, unsigned_headers \\ []) do
+    default_unsigned = ["x-amzn-trace-id"]
+    all_unsigned = default_unsigned ++ Enum.map(unsigned_headers, &String.downcase/1)
+
     headers
     |> Enum.reject(fn {key, _value} ->
-      String.downcase(key) == "x-amzn-trace-id"
+      String.downcase(key) in all_unsigned
     end)
     |> Map.new()
   end
@@ -51,7 +55,14 @@ defmodule AWSAuth.Utils do
     params
   end
 
-  def build_canonical_request(http_method, path, params, headers, hashed_payload) do
+  def build_canonical_request(
+        http_method,
+        path,
+        params,
+        headers,
+        hashed_payload,
+        uri_escape_path \\ true
+      ) do
     validate_query_params(params)
     query_params = URI.encode_query(params) |> String.replace("+", "%20")
 
@@ -71,9 +82,13 @@ defmodule AWSAuth.Utils do
         else: hashed_payload
 
     encoded_path =
-      path
-      |> String.split("/")
-      |> Enum.map_join("/", fn segment -> URI.encode_www_form(segment) end)
+      if uri_escape_path do
+        path
+        |> String.split("/")
+        |> Enum.map_join("/", fn segment -> URI.encode_www_form(segment) end)
+      else
+        path
+      end
 
     "#{http_method}\n#{encoded_path}\n#{query_params}\n#{header_params}\n\n#{signed_header_params}\n#{hashed_payload}"
   end
@@ -127,5 +142,60 @@ defmodule AWSAuth.Utils do
     |> NaiveDateTime.to_date()
     |> Date.to_iso8601()
     |> String.replace("-", "")
+  end
+
+  @doc """
+  Attempts to extract service and region from an AWS URL.
+  Returns {service, region} or {nil, nil} if unable to parse.
+
+  ## Examples
+
+      iex> AWSAuth.Utils.parse_aws_url("https://s3.us-west-2.amazonaws.com/bucket/key")
+      {"s3", "us-west-2"}
+
+      iex> AWSAuth.Utils.parse_aws_url("https://bedrock-runtime.us-east-1.amazonaws.com/model/invoke")
+      {"bedrock", "us-east-1"}
+
+      iex> AWSAuth.Utils.parse_aws_url("https://example.com")
+      {nil, nil}
+  """
+  def parse_aws_url(url) do
+    uri = URI.parse(url)
+    parse_aws_host(uri.host)
+  end
+
+  defp parse_aws_host(nil), do: {nil, nil}
+
+  defp parse_aws_host(host) do
+    # Pattern: service.region.amazonaws.com or service-name.region.amazonaws.com
+    case String.split(host, ".") do
+      [service, region, "amazonaws", "com"] ->
+        {extract_service(service), region}
+
+      # Pattern: bucket.s3.region.amazonaws.com
+      [_bucket, "s3", region, "amazonaws", "com"] ->
+        {"s3", region}
+
+      # Pattern: s3.amazonaws.com (us-east-1 default)
+      ["s3", "amazonaws", "com"] ->
+        {"s3", "us-east-1"}
+
+      # Pattern: service.amazonaws.com (us-east-1 default)
+      [service, "amazonaws", "com"] ->
+        {extract_service(service), "us-east-1"}
+
+      _ ->
+        {nil, nil}
+    end
+  end
+
+  defp extract_service(service_part) do
+    # Handle services like "bedrock-runtime" -> "bedrock"
+    # But keep some services intact like "bedrock-agent", "sts", "s3"
+    case String.split(service_part, "-", parts: 2) do
+      [service, "runtime"] -> service
+      [service, "agent"] -> "#{service}-agent"
+      _ -> service_part
+    end
   end
 end

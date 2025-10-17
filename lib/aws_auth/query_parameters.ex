@@ -12,7 +12,8 @@ defmodule AWSAuth.QueryParameters do
         headers,
         request_time,
         payload,
-        session_token \\ nil
+        session_token \\ nil,
+        opts \\ []
       ) do
     uri = URI.parse(url)
 
@@ -40,12 +41,16 @@ defmodule AWSAuth.QueryParameters do
           URI.decode_query(uri.query)
       end
 
+    # Default expiration is 15 minutes (900 seconds), max is 7 days (604800 seconds)
+    expires_in = Keyword.get(opts, :expires_in, 900)
+    uri_escape_path = Keyword.get(opts, :uri_escape_path, true)
+
     params =
       params
       |> Map.put("X-Amz-Algorithm", "AWS4-HMAC-SHA256")
       |> Map.put("X-Amz-Credential", "#{access_key}/#{scope}")
       |> Map.put("X-Amz-Date", amz_date)
-      |> Map.put("X-Amz-Expires", "86400")
+      |> Map.put("X-Amz-Expires", to_string(expires_in))
       |> Map.put("X-Amz-SignedHeaders", "#{Map.keys(headers) |> Enum.join(";")}")
 
     # Add session token to query params if provided (for temporary credentials)
@@ -67,7 +72,8 @@ defmodule AWSAuth.QueryParameters do
         uri.path,
         params,
         headers,
-        hashed_payload
+        hashed_payload,
+        uri_escape_path
       )
       |> AWSAuth.Utils.build_string_to_sign(amz_date, scope)
 

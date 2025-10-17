@@ -1,7 +1,7 @@
 defmodule ExAWSAuth.MixProject do
   use Mix.Project
 
-  @version "1.2.0"
+  @version "1.3.0"
   @source_url "https://github.com/neilberkman/ex_aws_auth"
 
   def project do
