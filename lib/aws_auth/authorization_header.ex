@@ -11,7 +11,8 @@ defmodule AWSAuth.AuthorizationHeader do
         service,
         payload,
         headers,
-        request_time
+        request_time,
+        session_token \\ nil
       ) do
     uri = URI.parse(url)
 
@@ -28,7 +29,19 @@ defmodule AWSAuth.AuthorizationHeader do
     region = String.downcase(region)
     service = String.downcase(service)
 
-    headers = Map.put_new(headers, "host", uri.host)
+    headers =
+      headers
+      |> AWSAuth.Utils.filter_unsignable_headers()
+      |> AWSAuth.Utils.normalize_header_values()
+      |> Map.put_new("host", uri.host)
+
+    # Add session token header if provided (for temporary credentials)
+    headers =
+      if session_token do
+        Map.put(headers, "x-amz-security-token", session_token)
+      else
+        headers
+      end
 
     payload = AWSAuth.Utils.hash_sha256(payload)
 

@@ -11,7 +11,8 @@ defmodule AWSAuth.QueryParameters do
         service,
         headers,
         request_time,
-        payload
+        payload,
+        session_token \\ nil
       ) do
     uri = URI.parse(url)
 
@@ -19,7 +20,11 @@ defmodule AWSAuth.QueryParameters do
     region = String.downcase(region)
     service = String.downcase(service)
 
-    headers = Map.put_new(headers, "host", uri.host)
+    headers =
+      headers
+      |> AWSAuth.Utils.filter_unsignable_headers()
+      |> AWSAuth.Utils.normalize_header_values()
+      |> Map.put_new("host", uri.host)
 
     amz_date = request_time |> AWSAuth.Utils.format_time()
     date = request_time |> AWSAuth.Utils.format_date()
@@ -42,6 +47,14 @@ defmodule AWSAuth.QueryParameters do
       |> Map.put("X-Amz-Date", amz_date)
       |> Map.put("X-Amz-Expires", "86400")
       |> Map.put("X-Amz-SignedHeaders", "#{Map.keys(headers) |> Enum.join(";")}")
+
+    # Add session token to query params if provided (for temporary credentials)
+    params =
+      if session_token do
+        Map.put(params, "X-Amz-Security-Token", session_token)
+      else
+        params
+      end
 
     hashed_payload =
       if service == "s3",
