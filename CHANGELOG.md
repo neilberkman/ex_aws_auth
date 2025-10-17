@@ -1,3 +1,38 @@
+## [1.3.0] - 2025-01-17
+
+### Added
+
+- **Service and region auto-detection from AWS URLs**
+  - Pass `nil` as service to automatically detect from URL (e.g., `https://s3.us-west-2.amazonaws.com`)
+  - Region is auto-detected from URL if not provided in credentials or options
+  - Supports standard AWS service patterns (service.region.amazonaws.com)
+
+- **Presigned URL expiration control**
+  - `:expires_in` option for customizing presigned URL validity period
+  - Default: 900 seconds (15 minutes), maximum: 604800 seconds (7 days)
+  - Changed default expiration from 86400 (24 hours) to 900 (15 minutes) to match AWS SDK conventions
+
+- **Unsigned payload support for streaming**
+  - `:unsigned` atom can now be passed as `payload` parameter
+  - Useful for large file uploads where content isn't known upfront
+  - Automatically sets payload to "UNSIGNED-PAYLOAD" in signature
+
+- **Advanced signing options**
+  - `:unsigned_headers` - Exclude specific headers from signing (e.g., `["user-agent"]`)
+  - `:uri_escape_path` - Control URI path escaping (default: `true`)
+  - `:apply_checksum_header` - Control inclusion of `x-amz-content-sha256` header (default: `true`)
+
+### Changed
+
+- **Breaking**: Default presigned URL expiration reduced from 24 hours to 15 minutes
+  - This aligns with AWS SDK defaults and security best practices
+  - Explicitly set `:expires_in` if you need longer expiration times
+- Updated `AWSAuth.Utils.filter_unsignable_headers/2` to accept custom unsigned headers list
+- Updated `AWSAuth.Utils.build_canonical_request/6` to support URI path escaping control
+- All legacy API signatures remain fully backward compatible with new optional parameters
+
+---
+
 ## [1.2.0] - 2025-01-17
 
 ### Added

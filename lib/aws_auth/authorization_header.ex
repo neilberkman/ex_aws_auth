@@ -12,7 +12,8 @@ defmodule AWSAuth.AuthorizationHeader do
         payload,
         headers,
         request_time,
-        session_token \\ nil
+        session_token \\ nil,
+        opts \\ []
       ) do
     uri = URI.parse(url)
 
@@ -29,9 +30,14 @@ defmodule AWSAuth.AuthorizationHeader do
     region = String.downcase(region)
     service = String.downcase(service)
 
+    # Extract options
+    unsigned_headers = Keyword.get(opts, :unsigned_headers, [])
+    uri_escape_path = Keyword.get(opts, :uri_escape_path, true)
+    apply_checksum_header = Keyword.get(opts, :apply_checksum_header, true)
+
     headers =
       headers
-      |> AWSAuth.Utils.filter_unsignable_headers()
+      |> AWSAuth.Utils.filter_unsignable_headers(unsigned_headers)
       |> AWSAuth.Utils.normalize_header_values()
       |> Map.put_new("host", uri.host)
 
@@ -43,9 +49,23 @@ defmodule AWSAuth.AuthorizationHeader do
         headers
       end
 
-    payload = AWSAuth.Utils.hash_sha256(payload)
+    # Handle unsigned payload
+    hashed_payload =
+      case payload do
+        :unsigned -> :unsigned
+        _ -> AWSAuth.Utils.hash_sha256(payload)
+      end
 
-    headers = Map.put_new(headers, "x-amz-content-sha256", payload)
+    # Only add checksum header if requested (default: true)
+    headers =
+      if apply_checksum_header do
+        checksum_value =
+          if hashed_payload == :unsigned, do: "UNSIGNED-PAYLOAD", else: hashed_payload
+
+        Map.put_new(headers, "x-amz-content-sha256", checksum_value)
+      else
+        headers
+      end
 
     amz_date = request_time |> AWSAuth.Utils.format_time()
     date = request_time |> AWSAuth.Utils.format_date()
@@ -60,7 +80,8 @@ defmodule AWSAuth.AuthorizationHeader do
         uri.path || "/",
         params,
         headers,
-        payload
+        hashed_payload,
+        uri_escape_path
       )
       |> AWSAuth.Utils.build_string_to_sign(amz_date, scope)
 
