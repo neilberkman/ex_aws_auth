@@ -1,3 +1,25 @@
+## [1.1.0] - 2025-01-17
+
+### Added
+
+- Session token support for temporary AWS credentials (STS AssumeRole)
+  - New optional `session_token` parameter for `sign_url/10` and `sign_authorization_header/10`
+  - Automatically adds `X-Amz-Security-Token` header for authorization header signing
+  - Automatically adds `X-Amz-Security-Token` query parameter for URL signing
+- Header filtering to remove unsignable headers (`x-amzn-trace-id`)
+  - Prevents AWS infrastructure trace headers from breaking signatures
+- Header value normalization
+  - Collapses multiple consecutive spaces to single space per AWS Sig V4 spec
+- Query parameter validation
+  - Rejects list keys/values with clear error messages
+
+### Changed
+
+- Headers are now filtered and normalized before signing in all signing methods
+- Query parameters are validated before canonical request generation
+
+---
+
 ## [1.0.1] - 2025-01-16
 
 ### Changed
