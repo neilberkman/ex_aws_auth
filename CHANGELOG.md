@@ -66,7 +66,7 @@ This is a fork of the original `aws_auth` package by Bryan Joseph, incorporating
 
 - Updated minimum Elixir requirement to ~> 1.14
 - Modernized all dependencies (ex_doc ~> 0.34, credo ~> 1.7, excoveralls ~> 0.18)
-- Migrated from deprecated `Mix.Config` to `import Config`
+- Migrated from deprecated Mix.Config to import Config
 
 ### Added
 
