@@ -1,3 +1,30 @@
+## [1.2.0] - 2025-01-17
+
+### Added
+
+- `AWSAuth.Credentials` struct for cleaner credential management
+  - `from_env/0` to load credentials from environment variables
+  - `from_map/1` to create from maps or keyword lists
+- Credential struct overloads for simpler signing
+  - `sign_url(credentials, method, url, service, opts)`
+  - `sign_authorization_header(credentials, method, url, service, headers, payload, opts)`
+- `return_format` option for flexible header formats
+  - `:list` (default) - Returns list of tuples `[{header, value}]`
+  - `:map` - Returns map `%{header => value}`
+  - `:req` - Returns Req-compatible format `%{header => [value]}`
+- `AWSAuth.Req` plugin module for seamless Req integration
+  - Automatically signs Req requests with AWS Signature V4
+  - Handles header format conversion transparently
+  - Supports all credential types (long-term, STS temp credentials)
+- Optional Req and Jason dependencies for plugin support
+
+### Changed
+
+- Timestamp parameter now optional in credential struct APIs (defaults to current time)
+- All new APIs maintain 100% backward compatibility with existing function signatures
+
+---
+
 ## [1.1.0] - 2025-01-17
 
 ### Added
