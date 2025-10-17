@@ -7,8 +7,11 @@ defmodule ExAWSAuth.MixProject do
   def project do
     [
       app: :ex_aws_auth,
+      name: "AWSAuth",
       version: @version,
       elixir: "~> 1.14",
+      source_url: @source_url,
+      homepage_url: @source_url,
       description: description(),
       package: package(),
       deps: deps(),
@@ -53,7 +56,10 @@ defmodule ExAWSAuth.MixProject do
       files: ["lib", "mix.exs", "README*", "LICENSE", "CHANGELOG.md"],
       maintainers: ["Neil Berkman"],
       licenses: ["Apache-2.0"],
-      links: %{"GitHub" => @source_url}
+      links: %{
+        "Changelog" => "https://hexdocs.pm/ex_aws_auth/changelog.html",
+        "GitHub" => @source_url
+      }
     ]
   end
 
@@ -68,6 +74,10 @@ defmodule ExAWSAuth.MixProject do
       source_url: @source_url,
       groups_for_extras: [
         Changelog: ~r/CHANGELOG\.md/
+      ],
+      groups_for_modules: [
+        Core: [AWSAuth, AWSAuth.Credentials],
+        Plugins: [AWSAuth.Req]
       ]
     ]
   end
