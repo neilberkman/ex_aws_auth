@@ -37,7 +37,7 @@ defmodule ExAWSAuth.MixProject do
       {:jason, "~> 1.4", optional: true},
 
       # Dev/Test dependencies
-      {:ex_doc, "~> 0.34", only: :dev, runtime: false},
+      {:ex_doc, "~> 0.39", only: :dev, runtime: false},
       {:excoveralls, "~> 0.18", only: :test},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
