@@ -1,3 +1,13 @@
+## [1.3.1] - 2025-01-18
+
+### Changed
+
+- Updated Elixir to 1.19.2 and Erlang to 28.1.1
+- Updated ex_doc to 0.39.1
+- Updated CI test matrix to use latest tooling versions
+
+---
+
 ## [1.3.0] - 2025-01-17
 
 ### Added
