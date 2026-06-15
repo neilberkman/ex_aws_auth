@@ -82,7 +82,15 @@ defmodule AWSAuth.EventStream do
       ...> )
       "29ef82c39850abdcc65f9d6046f3e437e385112b80b7f17b31ba33a7da3cc8af"
   """
-  def sign_event(%Credentials{} = credentials, service, prior_signature, header_bytes, payload, request_time, opts \\ [])
+  def sign_event(
+        %Credentials{} = credentials,
+        service,
+        prior_signature,
+        header_bytes,
+        payload,
+        request_time,
+        opts \\ []
+      )
       when is_binary(prior_signature) and is_binary(header_bytes) do
     region = (opts[:region] || credentials.region || "us-east-1") |> String.downcase()
     service = String.downcase(service)
@@ -126,7 +134,14 @@ defmodule AWSAuth.EventStream do
 
   Accepts the same options as `sign_event/7` (except `:raw`).
   """
-  def sign_message(%Credentials{} = credentials, service, prior_signature, payload, request_time, opts \\ []) do
+  def sign_message(
+        %Credentials{} = credentials,
+        service,
+        prior_signature,
+        payload,
+        request_time,
+        opts \\ []
+      ) do
     date_header = encode_timestamp_header(":date", request_time)
 
     raw_signature =

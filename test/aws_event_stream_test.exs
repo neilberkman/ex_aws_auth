@@ -1,10 +1,10 @@
 defmodule AWSAuth.EventStreamTest do
   use ExUnit.Case, async: true
 
-  doctest AWSAuth.EventStream
-
   alias AWSAuth.Credentials
   alias AWSAuth.EventStream
+
+  doctest AWSAuth.EventStream
 
   # Reference vector taken verbatim from the aws-beam/aws_signature test suite
   # (src/aws_signature.erl, sign_v4_event_test/0). Matching this byte-for-byte
@@ -21,8 +21,8 @@ defmodule AWSAuth.EventStreamTest do
   defp creds do
     %Credentials{
       access_key_id: "AKIDEXAMPLE",
-      secret_access_key: @secret_access_key,
-      region: @region
+      region: @region,
+      secret_access_key: @secret_access_key
     }
   end
 
@@ -40,7 +40,9 @@ defmodule AWSAuth.EventStreamTest do
 
     test ":raw returns the 32-byte binary signature equal to the hex form" do
       raw =
-        EventStream.sign_event(creds(), @service, @prior_signature, @header_bytes, "", @datetime, raw: true)
+        EventStream.sign_event(creds(), @service, @prior_signature, @header_bytes, "", @datetime,
+          raw: true
+        )
 
       assert byte_size(raw) == 32
       assert Base.encode16(raw, case: :lower) == @expected_signature
@@ -50,10 +52,19 @@ defmodule AWSAuth.EventStreamTest do
       west = %{creds() | region: "us-east-1"}
 
       with_opt =
-        EventStream.sign_event(west, @service, @prior_signature, @header_bytes, "", @datetime, region: "us-west-2")
+        EventStream.sign_event(west, @service, @prior_signature, @header_bytes, "", @datetime,
+          region: "us-west-2"
+        )
 
       without_opt =
-        EventStream.sign_event(%{creds() | region: "us-west-2"}, @service, @prior_signature, @header_bytes, "", @datetime)
+        EventStream.sign_event(
+          %{creds() | region: "us-west-2"},
+          @service,
+          @prior_signature,
+          @header_bytes,
+          "",
+          @datetime
+        )
 
       assert with_opt == without_opt
       refute with_opt == @expected_signature
@@ -61,7 +72,14 @@ defmodule AWSAuth.EventStreamTest do
 
     test "different prior signatures produce different signatures (chaining)" do
       other =
-        EventStream.sign_event(creds(), @service, String.duplicate("a", 64), @header_bytes, "", @datetime)
+        EventStream.sign_event(
+          creds(),
+          @service,
+          String.duplicate("a", 64),
+          @header_bytes,
+          "",
+          @datetime
+        )
 
       refute other == @expected_signature
     end
@@ -81,6 +99,7 @@ defmodule AWSAuth.EventStreamTest do
   describe "encode_byte_array_header/2" do
     test "prefixes a 16-bit big-endian length and uses value type 6" do
       value = <<1, 2, 3, 4>>
+
       assert EventStream.encode_byte_array_header(":chunk-signature", value) ==
                <<16, ":chunk-signature", 6, 0, 4, 1, 2, 3, 4>>
     end
@@ -101,8 +120,8 @@ defmodule AWSAuth.EventStreamTest do
       assert prelude == <<total_length::big-32, headers_length::big-32>>
       assert prelude_crc == :erlang.crc32(prelude)
 
-      body_size = byte_size(rest) - 4
-      <<body::binary-size(^body_size), message_crc::big-32>> = rest
+      body = binary_part(rest, 0, byte_size(rest) - 4)
+      <<message_crc::big-32>> = binary_part(rest, byte_size(rest) - 4, 4)
       assert body == headers <> payload
       assert message_crc == :erlang.crc32(<<prelude::binary, prelude_crc::big-32, body::binary>>)
     end
@@ -127,7 +146,9 @@ defmodule AWSAuth.EventStreamTest do
     end
 
     test "feeds its signature forward to the next event" do
-      {_f1, sig1} = EventStream.sign_message(creds(), @service, @prior_signature, "chunk-1", @datetime)
+      {_f1, sig1} =
+        EventStream.sign_message(creds(), @service, @prior_signature, "chunk-1", @datetime)
+
       {_f2, sig2} = EventStream.sign_message(creds(), @service, sig1, "chunk-2", @datetime)
 
       refute sig1 == sig2
