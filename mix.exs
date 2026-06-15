@@ -9,7 +9,7 @@ defmodule ExAWSAuth.MixProject do
       app: :ex_aws_auth,
       name: "AWSAuth",
       version: @version,
-      elixir: "~> 1.14",
+      elixir: "~> 1.15",
       source_url: @source_url,
       homepage_url: @source_url,
       description: description(),

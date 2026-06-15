@@ -18,9 +18,6 @@ jobs:
       matrix:
         include:
           # Earliest supported version
-          - elixir: "1.14.0"
-            otp: "25.0"
-          # Latest 1.15 series
           - elixir: "1.15.7"
             otp: "26.0"
           # Latest 1.16 series
