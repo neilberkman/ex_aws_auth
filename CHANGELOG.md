@@ -61,8 +61,8 @@
 - **Breaking**: Default presigned URL expiration reduced from 24 hours to 15 minutes
   - This aligns with AWS SDK defaults and security best practices
   - Explicitly set `:expires_in` if you need longer expiration times
-- Updated `AWSAuth.Utils.filter_unsignable_headers/2` to accept custom unsigned headers list
-- Updated `AWSAuth.Utils.build_canonical_request/6` to support URI path escaping control
+- Internal header filtering now accepts a custom unsigned-headers list
+- Internal canonical-request building now supports URI path escaping control
 - All legacy API signatures remain fully backward compatible with new optional parameters
 
 ---
