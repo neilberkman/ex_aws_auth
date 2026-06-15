@@ -12,6 +12,14 @@
   - Used by APIs such as Amazon Transcribe streaming and Bedrock bidirectional
     streaming
 
+### Changed
+
+- **Minimum Elixir is now `~> 1.15`** (was `~> 1.14`). The optional `req`
+  dependency pulls in `finch`, which dropped Elixir 1.14 support as of 0.22.
+- Updated dependencies to latest and pruned stale unused lockfile entries
+  inherited from the original `aws_auth`.
+- CI now tests Elixir 1.20 / OTP 29 as the primary target.
+
 ---
 
 ## [1.3.1] - 2025-01-18
