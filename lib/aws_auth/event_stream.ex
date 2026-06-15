@@ -49,6 +49,7 @@ defmodule AWSAuth.EventStream do
   # Event stream header value type identifiers.
   # https://docs.aws.amazon.com/transcribe/latest/dg/streaming-setting-up.html
   @type_byte_array 6
+  @type_string 7
   @type_timestamp 8
 
   @doc """
@@ -176,6 +177,18 @@ defmodule AWSAuth.EventStream do
   """
   def encode_byte_array_header(name, value) when is_binary(value) do
     encode_header(name, @type_byte_array, <<byte_size(value)::big-16, value::binary>>)
+  end
+
+  @doc """
+  Encodes a string header (value type 7) into the AWS event stream binary
+  format. The value is length-prefixed with a 16-bit big-endian length.
+
+  Used for application message headers such as `:content-type`, `:event-type`,
+  and `:message-type` on the events some services expect (e.g. Bedrock
+  bidirectional streaming input chunks).
+  """
+  def encode_string_header(name, value) when is_binary(value) do
+    encode_header(name, @type_string, <<byte_size(value)::big-16, value::binary>>)
   end
 
   @doc """

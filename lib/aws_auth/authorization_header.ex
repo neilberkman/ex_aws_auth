@@ -49,10 +49,11 @@ defmodule AWSAuth.AuthorizationHeader do
         headers
       end
 
-    # Handle unsigned payload
+    # Handle unsigned payload / event-stream seed payload
     hashed_payload =
       case payload do
         :unsigned -> :unsigned
+        :streaming_events -> "STREAMING-AWS4-HMAC-SHA256-EVENTS"
         _ -> AWSAuth.Utils.hash_sha256(payload)
       end
 
