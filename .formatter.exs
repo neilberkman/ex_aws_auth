@@ -8,7 +8,6 @@
     exclude: [],
     only: [
       :blocks,
-      :comment_directives,
       :configs,
       :defs,
       :deprecations,
