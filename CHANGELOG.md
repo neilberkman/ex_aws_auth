@@ -1,3 +1,16 @@
+## [1.4.1] - 2026-06-15
+
+### Added
+
+- Request-side helpers that complete the event-stream support added in 1.4.0:
+  - `AWSAuth.EventStream.encode_string_header/2` — type-7 string header encoder
+    (for application headers like `:content-type`/`:event-type`/`:message-type`).
+  - `:streaming_events` payload option for `sign_authorization_header/5`, which
+    seeds an event-stream request with
+    `x-amz-content-sha256: STREAMING-AWS4-HMAC-SHA256-EVENTS`.
+
+---
+
 ## [1.4.0] - 2026-06-15
 
 ### Added

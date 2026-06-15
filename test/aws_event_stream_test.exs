@@ -156,4 +156,21 @@ defmodule AWSAuth.EventStreamTest do
       assert String.length(sig2) == 64
     end
   end
+
+  describe "encode_string_header/2" do
+    test "encodes a type-7 string header (16-bit length prefix)" do
+      assert EventStream.encode_string_header(":content-type", "application/json") ==
+               <<13, ":content-type", 7, 0, 16, "application/json">>
+    end
+
+    test "round-trips through encode_message as decodable headers" do
+      headers =
+        EventStream.encode_string_header(":message-type", "event") <>
+          EventStream.encode_string_header(":event-type", "chunk")
+
+      frame = EventStream.encode_message(headers, "{}")
+      <<_total::32, hlen::32, _pcrc::32, rest::binary>> = frame
+      assert binary_part(rest, 0, hlen) == headers
+    end
+  end
 end

@@ -259,7 +259,9 @@ defmodule AWSAuth do
     * `service` - AWS service name (e.g., "s3", "bedrock"). Can be `nil` to auto-detect from URL.
     * `opts` - Keyword list of options:
       * `:headers` - Request headers as map (default: `%{}`)
-      * `:payload` - Request body (default: `""`) or `:unsigned` for streaming
+      * `:payload` - Request body (default: `""`), `:unsigned` for streaming
+        uploads, or `:streaming_events` to seed an event-stream request
+        (`x-amz-content-sha256: STREAMING-AWS4-HMAC-SHA256-EVENTS`; see `AWSAuth.EventStream`)
       * `:timestamp` - `NaiveDateTime` for signing (default: current time)
       * `:region` - Override region from credentials (auto-detected from URL if not provided)
       * `:return_format` - Return format (`:list`, `:map`, `:req`) (default: `:list`)

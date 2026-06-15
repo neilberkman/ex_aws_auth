@@ -267,4 +267,30 @@ defmodule AWSAuth.NewAPITest do
       assert Enum.all?(headers, fn {k, v} -> is_binary(k) and is_binary(v) end)
     end
   end
+
+  describe "payload: :streaming_events (event-stream seed)" do
+    test "sets x-amz-content-sha256 to the streaming-events sentinel and signs it" do
+      creds = %Credentials{
+        access_key_id: "AKIDEXAMPLE",
+        secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+        region: "us-east-1"
+      }
+
+      headers =
+        AWSAuth.sign_authorization_header(
+          creds,
+          "POST",
+          "https://bedrock-runtime.us-east-1.amazonaws.com/model/m/invoke-with-bidirectional-stream",
+          "bedrock",
+          headers: %{"host" => "bedrock-runtime.us-east-1.amazonaws.com"},
+          payload: :streaming_events,
+          timestamp: ~N[2026-06-15 12:00:00],
+          return_format: :map
+        )
+
+      assert headers["x-amz-content-sha256"] == "STREAMING-AWS4-HMAC-SHA256-EVENTS"
+      assert headers["authorization"] =~ "SignedHeaders=host;x-amz-content-sha256;x-amz-date"
+      assert headers["authorization"] =~ ~r/Signature=[0-9a-f]{64}/
+    end
+  end
 end
