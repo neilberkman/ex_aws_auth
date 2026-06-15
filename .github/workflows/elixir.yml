@@ -18,9 +18,6 @@ jobs:
       matrix:
         include:
           # Earliest supported version
-          - elixir: "1.14.0"
-            otp: "25.0"
-          # Latest 1.15 series
           - elixir: "1.15.7"
             otp: "26.0"
           # Latest 1.16 series
@@ -28,13 +25,16 @@ jobs:
             otp: "26.2"
           # Latest 1.17 series
           - elixir: "1.17.3"
-            otp: "27.1"
+            otp: "27.3"
           # Latest 1.18 series with OTP 28
           - elixir: "1.18.4"
             otp: "28.0"
           # Latest 1.19 series with OTP 28
           - elixir: "1.19.2"
             otp: "28.1"
+          # Latest 1.20 series with OTP 29 (primary target: runs format/credo/dialyzer)
+          - elixir: "1.20.0"
+            otp: "29.0"
     steps:
       - uses: actions/checkout@v4
 
@@ -62,16 +62,16 @@ jobs:
         run: MIX_ENV=test mix compile --warnings-as-errors
 
       - name: Check formatting
-        if: ${{ matrix.elixir == '1.19.2' && matrix.otp == '28.1' }}
+        if: ${{ matrix.elixir == '1.20.0' && matrix.otp == '29.0' }}
         run: mix format --check-formatted
 
       - name: Run tests
         run: mix test --trace
 
       - name: Run Credo
-        if: ${{ matrix.elixir == '1.19.2' && matrix.otp == '28.1' }}
+        if: ${{ matrix.elixir == '1.20.0' && matrix.otp == '29.0' }}
         run: mix credo --strict
 
       - name: Run Dialyzer
-        if: ${{ matrix.elixir == '1.19.2' && matrix.otp == '28.1' }}
+        if: ${{ matrix.elixir == '1.20.0' && matrix.otp == '29.0' }}
         run: mix dialyzer --format github
