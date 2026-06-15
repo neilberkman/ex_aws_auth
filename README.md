@@ -169,6 +169,33 @@ headers = AWSAuth.sign_authorization_header(
 )
 ```
 
+### Event Stream Signing (Bidirectional Streaming)
+
+Some AWS APIs accept a stream of events from the client over a single
+connection (e.g. Amazon Transcribe streaming, Bedrock bidirectional
+streaming). Each event is signed individually, and the signatures form a
+chain: the first event uses the seed signature from the initial request's
+`Authorization` header, and each subsequent event uses the previous event's
+signature.
+
+```elixir
+creds = AWSAuth.Credentials.from_env()
+
+# `seed` is the Signature=... value from the initial request's Authorization header
+{frame1, sig1} =
+  AWSAuth.EventStream.sign_message(creds, "transcribe", seed, payload1, NaiveDateTime.utc_now())
+
+{frame2, sig2} =
+  AWSAuth.EventStream.sign_message(creds, "transcribe", sig1, payload2, NaiveDateTime.utc_now())
+
+# `frame1` / `frame2` are wire-ready event stream messages; send them on the connection.
+```
+
+`sign_message/6` encodes the `:date` header, signs the event, and frames a
+complete event stream message (prelude + CRCs + `:date` and
+`:chunk-signature` headers + payload). For full control over the encoded
+header bytes, use the low-level `AWSAuth.EventStream.sign_event/7`.
+
 ### Session Tokens (STS Temporary Credentials)
 
 Full support for AWS Security Token Service temporary credentials:

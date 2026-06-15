@@ -1,3 +1,19 @@
+## [Unreleased]
+
+### Added
+
+- **Event stream signing for bidirectional streaming APIs** (`AWSAuth.EventStream`)
+  - `sign_message/6` signs an event and returns a wire-ready event stream frame
+    (prelude + CRCs + `:date`/`:chunk-signature` headers + payload), plus the
+    signature to chain into the next event
+  - `sign_event/7` low-level signer matching the canonical
+    `AWS4-HMAC-SHA256-PAYLOAD` algorithm
+  - Helpers for encoding event stream headers and framing messages
+  - Used by APIs such as Amazon Transcribe streaming and Bedrock bidirectional
+    streaming
+
+---
+
 ## [1.3.1] - 2025-01-18
 
 ### Changed

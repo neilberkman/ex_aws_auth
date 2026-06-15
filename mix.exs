@@ -77,6 +77,7 @@ defmodule ExAWSAuth.MixProject do
       ],
       groups_for_modules: [
         Core: [AWSAuth, AWSAuth.Credentials],
+        Streaming: [AWSAuth.EventStream],
         Plugins: [AWSAuth.Req]
       ]
     ]
