@@ -50,12 +50,7 @@ defmodule AWSAuth.AuthorizationHeader do
       end
 
     # Handle unsigned payload / event-stream seed payload
-    hashed_payload =
-      case payload do
-        :unsigned -> :unsigned
-        :streaming_events -> "STREAMING-AWS4-HMAC-SHA256-EVENTS"
-        _ -> AWSAuth.Utils.hash_sha256(payload)
-      end
+    hashed_payload = hashed_payload(payload)
 
     # Only add checksum header if requested (default: true)
     headers =
@@ -102,4 +97,8 @@ defmodule AWSAuth.AuthorizationHeader do
     |> Map.put("authorization", auth_header)
     |> Map.to_list()
   end
+
+  defp hashed_payload(:unsigned), do: :unsigned
+  defp hashed_payload(:streaming_events), do: "STREAMING-AWS4-HMAC-SHA256-EVENTS"
+  defp hashed_payload(payload), do: AWSAuth.Utils.hash_sha256(payload)
 end

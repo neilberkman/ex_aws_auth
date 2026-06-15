@@ -170,8 +170,7 @@ defmodule AWSAuth.EventStreamTest do
 
       frame = EventStream.encode_message(headers, "{}")
       <<_total::32, hlen::32, _pcrc::32, rest::binary>> = frame
-      <<hbytes::binary-size(hlen), _::binary>> = rest
-      assert hbytes == headers
+      assert binary_part(rest, 0, hlen) == headers
     end
   end
 end
