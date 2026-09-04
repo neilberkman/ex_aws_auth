@@ -102,7 +102,7 @@ defmodule AWSAuth do
 
     # Auto-detect service and region from URL if not provided
     {detected_service, detected_region} = AWSAuth.Utils.parse_aws_url(url)
-    service = service || detected_service
+    service = resolve_service!(service || detected_service, url)
     region = Keyword.get(opts, :region, creds.region || detected_region || "us-east-1")
 
     # Extract opts for query parameters signing
@@ -310,7 +310,7 @@ defmodule AWSAuth do
 
     # Auto-detect service and region from URL if not provided
     {detected_service, detected_region} = AWSAuth.Utils.parse_aws_url(url)
-    service = service || detected_service
+    service = resolve_service!(service || detected_service, url)
     region = Keyword.get(opts, :region, creds.region || detected_region || "us-east-1")
 
     # Extract signing options
@@ -508,6 +508,13 @@ defmodule AWSAuth do
   defp format_headers(headers, :list), do: headers
   defp format_headers(headers, :map), do: Map.new(headers)
   defp format_headers(headers, :req), do: Map.new(headers, fn {k, v} -> {k, [v]} end)
+
+  defp resolve_service!(service, _url) when is_binary(service) and service != "", do: service
+
+  defp resolve_service!(_service, url) do
+    raise ArgumentError,
+          "could not detect an AWS service from #{inspect(url)}; pass the service explicitly"
+  end
 
   defp current_time do
     DateTime.utc_now() |> DateTime.to_naive()

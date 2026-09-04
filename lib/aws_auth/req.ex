@@ -45,6 +45,9 @@ defmodule AWSAuth.Req do
   3. Signs the request using AWS Signature V4
   4. Returns headers in Req's expected format (`%{key => [value]}`)
 
+  Attach this plugin after any custom plugin that changes the request URL, body,
+  or headers. Request steps appended after AWS signing may make the signature stale.
+
   ## Examples
 
       # Basic usage with environment credentials
@@ -93,6 +96,13 @@ defmodule AWSAuth.Req do
 
   alias AWSAuth.Credentials
 
+  @generated_signing_headers [
+    "authorization",
+    "x-amz-content-sha256",
+    "x-amz-date",
+    "x-amz-security-token"
+  ]
+
   @doc """
   Attaches AWS Signature V4 signing to a Req request.
 
@@ -103,7 +113,7 @@ defmodule AWSAuth.Req do
 
   ## Returns
 
-  A `Req.Request` with the AWS signing step prepended.
+  A `Req.Request` with the AWS signing step appended after Req prepares the URL and body.
 
   ## Examples
 
@@ -120,7 +130,7 @@ defmodule AWSAuth.Req do
     region = Keyword.get(opts, :region, credentials.region || "us-east-1")
 
     request
-    |> Req.Request.prepend_request_steps(
+    |> Req.Request.append_request_steps(
       aws_sigv4: fn req ->
         sign_request(req, credentials, service, region)
       end
@@ -138,6 +148,7 @@ defmodule AWSAuth.Req do
       Map.new(req.headers, fn {k, v} ->
         {k, if(is_list(v), do: List.first(v), else: v)}
       end)
+      |> Map.drop(@generated_signing_headers)
 
     body = req.body || ""
 

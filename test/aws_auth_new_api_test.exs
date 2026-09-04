@@ -80,6 +80,80 @@ defmodule AWSAuth.NewAPITest do
       assert is_binary(signed_url)
       refute String.contains?(signed_url, "X-Amz-Security-Token")
     end
+
+    test "rejects expiration times outside the AWS range", %{creds: creds} do
+      url = "https://s3.amazonaws.com/mybucket/mykey"
+
+      for expires_in <- [0, 604_801, "not-an-integer", 1.5] do
+        assert_raise ArgumentError, ~r/:expires_in must be an integer between 1 and 604800/, fn ->
+          AWSAuth.sign_url(creds, "GET", url, "s3", expires_in: expires_in)
+        end
+      end
+    end
+
+    test "accepts an integer expiration from configuration", %{creds: creds} do
+      signed_url =
+        AWSAuth.sign_url(
+          creds,
+          "GET",
+          "https://s3.amazonaws.com/mybucket/mykey",
+          "s3",
+          expires_in: "3600"
+        )
+
+      assert URI.decode_query(URI.parse(signed_url).query)["X-Amz-Expires"] == "3600"
+    end
+
+    test "preserves duplicate query parameters", %{creds: creds} do
+      signed_url =
+        AWSAuth.sign_url(
+          creds,
+          "GET",
+          "https://s3.amazonaws.com/mybucket/mykey?partNumber=2&partNumber=1",
+          "s3"
+        )
+
+      part_numbers =
+        signed_url
+        |> URI.parse()
+        |> Map.fetch!(:query)
+        |> URI.query_decoder()
+        |> Enum.filter(fn {key, _value} -> key == "partNumber" end)
+
+      assert part_numbers == [{"partNumber", "1"}, {"partNumber", "2"}]
+    end
+
+    test "signs an endpoint URL with no path", %{creds: creds} do
+      signed_url =
+        AWSAuth.sign_url(
+          creds,
+          "GET",
+          "https://sts.us-east-1.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15",
+          "sts"
+        )
+
+      assert URI.parse(signed_url).path == "/"
+    end
+
+    test "lowercases and sorts signed headers", %{creds: creds} do
+      signed_url =
+        AWSAuth.sign_url(
+          creds,
+          "GET",
+          "https://s3.amazonaws.com/mybucket/mykey",
+          "s3",
+          headers: %{"X-Amz-Acl" => "public-read"}
+        )
+
+      assert URI.decode_query(URI.parse(signed_url).query)["X-Amz-SignedHeaders"] ==
+               "host;x-amz-acl"
+    end
+
+    test "raises a clear error when service detection fails", %{creds: creds} do
+      assert_raise ArgumentError, ~r/could not detect an AWS service/, fn ->
+        AWSAuth.sign_url(creds, "GET", "https://example.com/resource", nil)
+      end
+    end
   end
 
   describe "sign_authorization_header/5 with Credentials struct" do

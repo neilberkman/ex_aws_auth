@@ -1,3 +1,16 @@
+## [1.4.2] - 2026-09-03
+
+### Fixed
+
+- Run Req signing after its built-in URL, query, body encoding, and compression steps.
+- Replace prior SigV4 headers when Req re-signs a retried request.
+- Encode canonical URI paths and query parameters according to AWS SigV4 rules.
+- Preserve and sort duplicate query parameters when signing requests.
+- Detect virtual-hosted, dotted-bucket, dual-stack, China, and legacy regional S3 endpoints.
+- Validate presigned URL expirations while continuing to accept integer strings from configuration.
+
+---
+
 ## [1.4.1] - 2026-06-15
 
 ### Added

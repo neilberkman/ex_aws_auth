@@ -64,17 +64,14 @@ defmodule AWSAuth.Utils do
         uri_escape_path \\ true
       ) do
     validate_query_params(params)
-    query_params = URI.encode_query(params) |> String.replace("+", "%20")
+    query_params = canonical_query_string(params)
 
     header_params =
       Enum.map(headers, fn {key, value} -> "#{String.downcase(key)}:#{String.trim(value)}" end)
       |> Enum.sort(&(&1 < &2))
       |> Enum.join("\n")
 
-    signed_header_params =
-      Enum.map(headers, fn {key, _} -> String.downcase(key) end)
-      |> Enum.sort(&(&1 < &2))
-      |> Enum.join(";")
+    signed_header_params = signed_headers(headers)
 
     hashed_payload =
       if hashed_payload == :unsigned,
@@ -85,12 +82,51 @@ defmodule AWSAuth.Utils do
       if uri_escape_path do
         path
         |> String.split("/")
-        |> Enum.map_join("/", fn segment -> URI.encode_www_form(segment) end)
+        |> Enum.map_join("/", &uri_encode/1)
       else
         path
       end
 
     "#{http_method}\n#{encoded_path}\n#{query_params}\n#{header_params}\n\n#{signed_header_params}\n#{hashed_payload}"
+  end
+
+  @doc """
+  Builds the sorted, AWS-encoded query string used in a canonical request.
+
+  Accepts any enumerable of key/value pairs and preserves duplicate keys.
+  """
+  def canonical_query_string(params) do
+    params
+    |> Enum.map(fn {key, value} -> {uri_encode(key), uri_encode(value)} end)
+    |> Enum.sort()
+    |> Enum.map_join("&", fn {key, value} -> "#{key}=#{value}" end)
+  end
+
+  @doc """
+  URI-encodes a value according to the AWS Signature Version 4 rules.
+  """
+  def uri_encode(value) do
+    value
+    |> to_string()
+    |> :binary.bin_to_list()
+    |> Enum.map_join(fn byte ->
+      if unreserved?(byte) do
+        <<byte>>
+      else
+        "%" <> Base.encode16(<<byte>>)
+      end
+    end)
+  end
+
+  defp unreserved?(byte) do
+    byte in ?A..?Z or byte in ?a..?z or byte in ?0..?9 or byte in [?-, ?., ?_, ?~]
+  end
+
+  def signed_headers(headers) do
+    headers
+    |> Enum.map(fn {key, _value} -> String.downcase(key) end)
+    |> Enum.sort()
+    |> Enum.join(";")
   end
 
   def build_string_to_sign(canonical_request, timestamp, scope) do
@@ -167,26 +203,69 @@ defmodule AWSAuth.Utils do
   defp parse_aws_host(nil), do: {nil, nil}
 
   defp parse_aws_host(host) do
-    # Pattern: service.region.amazonaws.com or service-name.region.amazonaws.com
-    case String.split(host, ".") do
-      [service, region, "amazonaws", "com"] ->
-        {extract_service(service), region}
-
-      # Pattern: bucket.s3.region.amazonaws.com
-      [_bucket, "s3", region, "amazonaws", "com"] ->
-        {"s3", region}
-
-      # Pattern: s3.amazonaws.com (us-east-1 default)
-      ["s3", "amazonaws", "com"] ->
-        {"s3", "us-east-1"}
-
-      # Pattern: service.amazonaws.com (us-east-1 default)
-      [service, "amazonaws", "com"] ->
-        {extract_service(service), "us-east-1"}
-
-      _ ->
-        {nil, nil}
+    case aws_endpoint_parts(String.split(host, ".")) do
+      {:ok, endpoint_parts} -> parse_aws_endpoint(endpoint_parts)
+      :error -> {nil, nil}
     end
+  end
+
+  defp aws_endpoint_parts(parts) do
+    case Enum.reverse(parts) do
+      ["com", "amazonaws" | reversed_endpoint] ->
+        {:ok, Enum.reverse(reversed_endpoint)}
+
+      ["cn", "com", "amazonaws" | reversed_endpoint] ->
+        {:ok, Enum.reverse(reversed_endpoint)}
+
+      _other ->
+        :error
+    end
+  end
+
+  defp parse_aws_endpoint(parts) do
+    case last_index(parts, &(&1 == "s3")) do
+      nil -> parse_legacy_s3_or_service(parts)
+      index -> {"s3", s3_region(Enum.drop(parts, index + 1))}
+    end
+  end
+
+  defp parse_legacy_s3_or_service(parts) do
+    case last_index(parts, &legacy_s3_label?/1) do
+      nil -> parse_regional_service(parts)
+      index -> {"s3", legacy_s3_region(Enum.drop(parts, index))}
+    end
+  end
+
+  defp parse_regional_service(["s3-control", region]), do: {"s3", region}
+  defp parse_regional_service([service, region]), do: {extract_service(service), region}
+  defp parse_regional_service([service]), do: {extract_service(service), "us-east-1"}
+  defp parse_regional_service(_parts), do: {nil, nil}
+
+  defp s3_region([]), do: "us-east-1"
+  defp s3_region([region]), do: region
+  defp s3_region(["dualstack", region]), do: region
+  defp s3_region(_parts), do: nil
+
+  defp legacy_s3_region(["s3-" <> variant, region]) when variant in ["fips", "dualstack"],
+    do: region
+
+  defp legacy_s3_region(["s3-accelerate"]), do: nil
+  defp legacy_s3_region(["s3-external-1"]), do: "us-east-1"
+  defp legacy_s3_region(["s3-" <> region]), do: region
+  defp legacy_s3_region(_parts), do: nil
+
+  defp legacy_s3_label?(label) when label in ["s3-fips", "s3-dualstack", "s3-accelerate"],
+    do: true
+
+  defp legacy_s3_label?("s3-" <> region), do: Regex.match?(~r/^[a-z0-9-]+-\d$/, region)
+  defp legacy_s3_label?(_label), do: false
+
+  defp last_index(parts, predicate) do
+    parts
+    |> Enum.with_index()
+    |> Enum.reduce(nil, fn {part, index}, found_index ->
+      if predicate.(part), do: index, else: found_index
+    end)
   end
 
   defp extract_service(service_part) do

@@ -20,10 +20,10 @@ defmodule AWSAuth.AuthorizationHeader do
     params =
       case uri.query do
         nil ->
-          Map.new()
+          []
 
         _ ->
-          URI.decode_query(uri.query)
+          Enum.to_list(URI.query_decoder(uri.query))
       end
 
     http_method = String.upcase(http_method)
@@ -85,10 +85,7 @@ defmodule AWSAuth.AuthorizationHeader do
       AWSAuth.Utils.build_signing_key(secret_key, date, region, service)
       |> AWSAuth.Utils.build_signature(string_to_sign)
 
-    signed_headers =
-      Enum.map(headers, fn {key, _} -> String.downcase(key) end)
-      |> Enum.sort(&(&1 < &2))
-      |> Enum.join(";")
+    signed_headers = AWSAuth.Utils.signed_headers(headers)
 
     auth_header =
       "AWS4-HMAC-SHA256 Credential=#{access_key}/#{scope},SignedHeaders=#{signed_headers},Signature=#{signature}"
