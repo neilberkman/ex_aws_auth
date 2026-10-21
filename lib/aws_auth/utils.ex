@@ -197,14 +197,18 @@ defmodule AWSAuth.Utils do
   """
   def parse_aws_url(url) do
     uri = URI.parse(url)
-    parse_aws_host(uri.host)
+    host = if is_binary(uri.host), do: String.downcase(uri.host, :ascii)
+    parse_aws_host(host)
   end
 
   defp parse_aws_host(nil), do: {nil, nil}
+  defp parse_aws_host("global.health.amazonaws.com"), do: {"health", "us-east-1"}
+  defp parse_aws_host("global.health.amazonaws.com.cn"), do: {"health", "cn-northwest-1"}
+  defp parse_aws_host("global.health.us-gov.amazonaws.com"), do: {"health", "us-gov-west-1"}
 
   defp parse_aws_host(host) do
     case aws_endpoint_parts(String.split(host, ".")) do
-      {:ok, endpoint_parts} -> parse_aws_endpoint(endpoint_parts)
+      {:ok, partition, endpoint_parts} -> parse_aws_endpoint(endpoint_parts, partition)
       :error -> {nil, nil}
     end
   end
@@ -212,50 +216,146 @@ defmodule AWSAuth.Utils do
   defp aws_endpoint_parts(parts) do
     case Enum.reverse(parts) do
       ["com", "amazonaws" | reversed_endpoint] ->
-        {:ok, Enum.reverse(reversed_endpoint)}
+        {:ok, :aws, Enum.reverse(reversed_endpoint)}
 
       ["cn", "com", "amazonaws" | reversed_endpoint] ->
-        {:ok, Enum.reverse(reversed_endpoint)}
+        {:ok, :aws_cn, Enum.reverse(reversed_endpoint)}
+
+      ["aws", "api" | reversed_endpoint] ->
+        {:ok, :aws, Enum.reverse(reversed_endpoint)}
+
+      ["cn", "com", "amazonwebservices", "api" | reversed_endpoint] ->
+        {:ok, :aws_cn, Enum.reverse(reversed_endpoint)}
 
       _other ->
         :error
     end
   end
 
-  defp parse_aws_endpoint(parts) do
-    case last_index(parts, &(&1 == "s3")) do
-      nil -> parse_legacy_s3_or_service(parts)
-      index -> {"s3", s3_region(Enum.drop(parts, index + 1))}
+  defp parse_aws_endpoint(parts, partition) do
+    case last_index(parts, &s3_service_label?/1) do
+      nil ->
+        parse_legacy_s3_or_service(parts, partition)
+
+      index ->
+        service = parts |> Enum.at(index) |> s3_service_name()
+        {service, s3_region(Enum.drop(parts, index + 1))}
     end
   end
 
-  defp parse_legacy_s3_or_service(parts) do
+  defp parse_legacy_s3_or_service(parts, partition) do
     case last_index(parts, &legacy_s3_label?/1) do
-      nil -> parse_regional_service(parts)
+      nil -> parse_regional_service(parts, partition)
       index -> {"s3", legacy_s3_region(Enum.drop(parts, index))}
     end
   end
 
-  defp parse_regional_service(["s3-control", region]), do: {"s3", region}
-  defp parse_regional_service([service, region]), do: {extract_service(service), region}
-  defp parse_regional_service([service]), do: {extract_service(service), "us-east-1"}
-  defp parse_regional_service(_parts), do: {nil, nil}
+  defp parse_regional_service([service], partition) do
+    normalized = strip_fips(service)
+    signing_name = AWSAuth.SigningNames.get(normalized, normalized)
+    {signing_name, global_region_for(signing_name, partition)}
+  end
+
+  defp parse_regional_service([service, region], partition) do
+    normalized = strip_fips(service)
+    signing_name = AWSAuth.SigningNames.get(normalized, normalized)
+    {signing_name, normalize_region_label(region, signing_name, partition)}
+  end
+
+  defp parse_regional_service([_first, _second | _rest] = parts, partition) do
+    {leading, [region]} = Enum.split(parts, -1)
+
+    normalized_labels =
+      leading
+      |> Enum.reject(&(&1 in ["fips", "dualstack"]))
+      |> Enum.map(&strip_fips/1)
+
+    case normalized_labels do
+      [single] ->
+        signing_name = AWSAuth.SigningNames.get(single, single)
+        {signing_name, normalize_region_label(region, signing_name, partition)}
+
+      multiple ->
+        prefix = Enum.join(multiple, ".")
+
+        case AWSAuth.SigningNames.fetch(prefix) do
+          {:ok, signing_name} ->
+            {signing_name, normalize_region_label(region, signing_name, partition)}
+
+          :error ->
+            {nil, nil}
+        end
+    end
+  end
+
+  defp parse_regional_service(_parts, _partition), do: {nil, nil}
+
+  defp strip_fips(label), do: String.trim_trailing(label, "-fips")
+
+  defp normalize_region_label(region) do
+    normalize_region_label(region, nil, :aws)
+  end
+
+  defp normalize_region_label(region, signing_name, partition)
+       when region in ["global", "aws-global", "aws-cn-global"] do
+    global_region_for(signing_name, partition)
+  end
+
+  defp normalize_region_label(region, _signing_name, _partition)
+       when region in ["us-gov", "aws-us-gov-global"], do: "us-gov-west-1"
+
+  defp normalize_region_label(region, _signing_name, _partition) do
+    region
+    |> String.trim_leading("fips-")
+    |> String.trim_trailing("-fips")
+  end
+
+  defp global_region_for("codecatalyst", :aws), do: "aws-global"
+
+  defp global_region_for(service, :aws)
+       when service in ["networkmanager", "route53-recovery-control-config"], do: "us-west-2"
+
+  defp global_region_for(service, :aws_cn) when service in ["iam", "support"], do: "cn-north-1"
+  defp global_region_for(_signing_name, :aws_cn), do: "cn-northwest-1"
+  defp global_region_for(_signing_name, _partition), do: "us-east-1"
+
+  defp s3_service_label?(label), do: s3_service_name(label) != nil
+
+  defp s3_service_name(label) do
+    case strip_fips(label) do
+      "s3" -> "s3"
+      "s3-control" -> "s3"
+      "s3-accesspoint" -> "s3"
+      "s3-outposts" -> "s3-outposts"
+      "s3-object-lambda" -> "s3-object-lambda"
+      "s3express-control" -> "s3express"
+      "s3express-" <> _az -> "s3express"
+      _other -> nil
+    end
+  end
 
   defp s3_region([]), do: "us-east-1"
-  defp s3_region([region]), do: region
-  defp s3_region(["dualstack", region]), do: region
+  defp s3_region([region]), do: normalize_region_label(region)
+  defp s3_region(["dualstack", region]), do: normalize_region_label(region)
+  defp s3_region(["fips", region]), do: normalize_region_label(region)
+  defp s3_region(["fips", "dualstack", region]), do: normalize_region_label(region)
+  defp s3_region(["dualstack", "fips", region]), do: normalize_region_label(region)
   defp s3_region(_parts), do: nil
 
   defp legacy_s3_region(["s3-" <> variant, region]) when variant in ["fips", "dualstack"],
-    do: region
+    do: normalize_region_label(region)
 
-  defp legacy_s3_region(["s3-accelerate"]), do: nil
+  defp legacy_s3_region(["s3-" <> variant, "dualstack", region])
+       when variant in ["fips", "dualstack"], do: normalize_region_label(region)
+
+  defp legacy_s3_region(["s3-accelerate" | _rest]), do: nil
+  defp legacy_s3_region(["s3-global" | _rest]), do: nil
   defp legacy_s3_region(["s3-external-1"]), do: "us-east-1"
-  defp legacy_s3_region(["s3-" <> region]), do: region
+  defp legacy_s3_region(["s3-" <> region]), do: normalize_region_label(region)
   defp legacy_s3_region(_parts), do: nil
 
-  defp legacy_s3_label?(label) when label in ["s3-fips", "s3-dualstack", "s3-accelerate"],
-    do: true
+  defp legacy_s3_label?(label)
+       when label in ["s3-fips", "s3-dualstack", "s3-accelerate", "s3-global"], do: true
 
   defp legacy_s3_label?("s3-" <> region), do: Regex.match?(~r/^[a-z0-9-]+-\d$/, region)
   defp legacy_s3_label?(_label), do: false
@@ -266,15 +366,5 @@ defmodule AWSAuth.Utils do
     |> Enum.reduce(nil, fn {part, index}, found_index ->
       if predicate.(part), do: index, else: found_index
     end)
-  end
-
-  defp extract_service(service_part) do
-    # Handle services like "bedrock-runtime" -> "bedrock"
-    # But keep some services intact like "bedrock-agent", "sts", "s3"
-    case String.split(service_part, "-", parts: 2) do
-      [service, "runtime"] -> service
-      [service, "agent"] -> "#{service}-agent"
-      _ -> service_part
-    end
   end
 end

@@ -187,5 +187,148 @@ defmodule AWSAuth.UtilsTest do
 
     assert AWSAuth.Utils.parse_aws_url("https://s3-control.us-west-2.amazonaws.com") ==
              {"s3", "us-west-2"}
+
+    assert AWSAuth.Utils.parse_aws_url("https://s3-fips.aws-global.amazonaws.com") ==
+             {"s3", "us-east-1"}
+
+    assert AWSAuth.Utils.parse_aws_url("https://s3-fips.dualstack.us-east-1.amazonaws.com") ==
+             {"s3", "us-east-1"}
+
+    assert AWSAuth.Utils.parse_aws_url("https://bucket.s3-fips.dualstack.us-west-2.amazonaws.com") ==
+             {"s3", "us-west-2"}
+
+    assert AWSAuth.Utils.parse_aws_url("https://s3-control.dualstack.us-east-1.amazonaws.com") ==
+             {"s3", "us-east-1"}
+
+    assert AWSAuth.Utils.parse_aws_url(
+             "https://123456789012.s3-control-fips.dualstack.us-east-1.amazonaws.com"
+           ) == {"s3", "us-east-1"}
+
+    assert AWSAuth.Utils.parse_aws_url(
+             "https://ap-123456789012.s3-accesspoint-fips.dualstack.us-west-2.amazonaws.com"
+           ) == {"s3", "us-west-2"}
+
+    assert AWSAuth.Utils.parse_aws_url(
+             "https://s3express-control-fips.dualstack.us-east-1.amazonaws.com"
+           ) == {"s3express", "us-east-1"}
+
+    assert AWSAuth.Utils.parse_aws_url(
+             "https://bucket.s3express-fips-use1-az1.dualstack.us-east-1.amazonaws.com"
+           ) == {"s3express", "us-east-1"}
+  end
+
+  test "parse_aws_url/1 uses botocore endpoint-prefix table and strips -fips" do
+    assert AWSAuth.Utils.parse_aws_url("https://bedrock-agent.us-east-1.amazonaws.com") ==
+             {"bedrock", "us-east-1"}
+
+    assert AWSAuth.Utils.parse_aws_url("https://bedrock-agent-runtime.us-east-1.amazonaws.com") ==
+             {"bedrock", "us-east-1"}
+
+    assert AWSAuth.Utils.parse_aws_url("https://bedrock-data-automation.us-east-1.amazonaws.com") ==
+             {"bedrock", "us-east-1"}
+
+    assert AWSAuth.Utils.parse_aws_url(
+             "https://bedrock-data-automation-runtime.us-east-1.amazonaws.com"
+           ) == {"bedrock", "us-east-1"}
+
+    assert AWSAuth.Utils.parse_aws_url("https://email.us-east-1.amazonaws.com") ==
+             {"ses", "us-east-1"}
+
+    assert AWSAuth.Utils.parse_aws_url("https://bedrock-agentcore.us-east-1.amazonaws.com") ==
+             {"bedrock-agentcore", "us-east-1"}
+
+    assert AWSAuth.Utils.parse_aws_url(
+             "https://bedrock-agentcore-control.us-east-1.amazonaws.com"
+           ) == {"bedrock-agentcore", "us-east-1"}
+
+    assert AWSAuth.Utils.parse_aws_url("https://api.ecr.us-east-1.amazonaws.com") ==
+             {"ecr", "us-east-1"}
+
+    assert AWSAuth.Utils.parse_aws_url("https://runtime.sagemaker.us-east-1.amazonaws.com") ==
+             {"sagemaker", "us-east-1"}
+
+    assert AWSAuth.Utils.parse_aws_url("https://a2i-runtime.sagemaker.us-east-1.amazonaws.com") ==
+             {"sagemaker", "us-east-1"}
+
+    assert AWSAuth.Utils.parse_aws_url("https://lambda.us-east-1.amazonaws.com") ==
+             {"lambda", "us-east-1"}
+
+    assert AWSAuth.Utils.parse_aws_url("https://lambda-fips.us-east-1.amazonaws.com") ==
+             {"lambda", "us-east-1"}
+
+    assert AWSAuth.Utils.parse_aws_url("https://api-fips.sagemaker.us-east-1.amazonaws.com") ==
+             {"sagemaker", "us-east-1"}
+
+    assert AWSAuth.Utils.parse_aws_url("https://data.iot-fips.us-east-1.amazonaws.com") ==
+             {"iotdata", "us-east-1"}
+
+    assert AWSAuth.Utils.parse_aws_url("https://iam.global.api.aws") ==
+             {"iam", "us-east-1"}
+
+    assert AWSAuth.Utils.parse_aws_url("https://importexport.amazonaws.com") ==
+             {"IngestionService", "us-east-1"}
+
+    assert AWSAuth.Utils.parse_aws_url("https://api.tunneling.iot.us-east-1.amazonaws.com") ==
+             {"IoTSecuredTunneling", "us-east-1"}
+
+    assert AWSAuth.Utils.parse_aws_url("https://data.ats.iot.cn-north-1.amazonaws.com.cn") ==
+             {"iotdata", "cn-north-1"}
+
+    assert AWSAuth.Utils.parse_aws_url("https://cn.transcribe.cn-north-1.amazonaws.com.cn") ==
+             {"transcribe", "cn-north-1"}
+
+    assert AWSAuth.Utils.parse_aws_url("https://api.iottwinmaker.us-east-1.amazonaws.com") ==
+             {"iottwinmaker", "us-east-1"}
+
+    assert AWSAuth.Utils.parse_aws_url("https://verification.signer-fips.us-east-1.amazonaws.com") ==
+             {"signer", "us-east-1"}
+
+    assert AWSAuth.Utils.parse_aws_url("https://global.health.amazonaws.com") ==
+             {"health", "us-east-1"}
+
+    assert AWSAuth.Utils.parse_aws_url("https://global.health.amazonaws.com.cn") ==
+             {"health", "cn-northwest-1"}
+
+    assert AWSAuth.Utils.parse_aws_url("https://global.health.us-gov.amazonaws.com") ==
+             {"health", "us-gov-west-1"}
+
+    assert AWSAuth.Utils.parse_aws_url("https://budgets.amazonaws.com.cn") ==
+             {"budgets", "cn-northwest-1"}
+
+    assert AWSAuth.Utils.parse_aws_url("https://route53.amazonaws.com.cn") ==
+             {"route53", "cn-northwest-1"}
+
+    assert AWSAuth.Utils.parse_aws_url("https://route53.global.api.amazonwebservices.com.cn") ==
+             {"route53", "cn-northwest-1"}
+
+    assert AWSAuth.Utils.parse_aws_url("https://iam.global.api.amazonwebservices.com.cn") ==
+             {"iam", "cn-north-1"}
+
+    assert AWSAuth.Utils.parse_aws_url("https://codecatalyst.global.api.aws") ==
+             {"codecatalyst", "aws-global"}
+
+    assert AWSAuth.Utils.parse_aws_url(
+             "https://support.aws-cn-global.api.amazonwebservices.com.cn"
+           ) == {"support", "cn-north-1"}
+
+    assert AWSAuth.Utils.parse_aws_url("https://support.amazonaws.com.cn") ==
+             {"support", "cn-north-1"}
+
+    assert AWSAuth.Utils.parse_aws_url(
+             "https://route53-recovery-control-config.aws-global.api.aws"
+           ) == {"route53-recovery-control-config", "us-west-2"}
+
+    assert AWSAuth.Utils.parse_aws_url("https://networkmanager.aws-global.amazonaws.com") ==
+             {"networkmanager", "us-west-2"}
+
+    assert AWSAuth.Utils.parse_aws_url("https://S3.US-EAST-1.AMAZONAWS.COM/bucket/key") ==
+             {"s3", "us-east-1"}
+
+    assert AWSAuth.Utils.parse_aws_url(
+             "https://myaccesspoint-123456789012.op-0123456789abcdef0.s3-outposts.us-east-1.amazonaws.com/a%20b.txt"
+           ) == {"s3-outposts", "us-east-1"}
+
+    assert AWSAuth.Utils.parse_aws_url("https://unknown.thing.us-east-1.amazonaws.com") ==
+             {nil, nil}
   end
 end
