@@ -75,3 +75,16 @@ jobs:
       - name: Run Dialyzer
         if: ${{ matrix.elixir == '1.20.4' && matrix.otp == '29.0.6' }}
         run: mix dialyzer --format github
+
+      - name: Set up Python
+        if: ${{ matrix.elixir == '1.20.4' && matrix.otp == '29.0.6' }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Verify botocore-generated artifacts
+        if: ${{ matrix.elixir == '1.20.4' && matrix.otp == '29.0.6' }}
+        run: |
+          python -m pip install --quiet botocore==1.42.78
+          python scripts/gen_signing_names.py --check
+          python test/support/botocore_vectors.py --check
