@@ -1,19 +1,44 @@
 defmodule AWSAuth do
   @moduledoc """
-  Signs urls or authentication headers for use with AWS requests.
+  Signs URLs or authentication headers for use with AWS requests.
 
-  ## New in 1.2.0
+  ## Usage
 
-  This version adds convenient new APIs while maintaining 100% backward compatibility:
+  ### With Req plugin
 
-  - `AWSAuth.Credentials` struct for cleaner credential management
-  - Credential struct overloads for `sign_url` and `sign_authorization_header`
-  - Optional `return_format` option (`:list`, `:map`, `:req`) for flexible header formats
-  - `AWSAuth.Req` plugin for seamless Req integration
+  ```elixir
+  creds = AWSAuth.Credentials.from_env()
 
-  ## Migration Guide
+  Req.new(url: url, method: :post, body: body)
+  |> AWSAuth.Req.attach(credentials: creds, service: "bedrock")
+  |> Req.request()
+  ```
 
-  ### Old API (still fully supported)
+  ### With `AWSAuth.Credentials` struct
+
+  ```elixir
+  creds = %AWSAuth.Credentials{
+    access_key_id: access_key,
+    secret_access_key: secret_key,
+    session_token: session_token,
+    region: "us-east-1"
+  }
+
+  # Or load from environment
+  creds = AWSAuth.Credentials.from_env()
+
+  AWSAuth.sign_authorization_header(
+    creds,
+    "POST",
+    url,
+    "bedrock",
+    headers: headers,
+    payload: body
+  )
+  ```
+
+  ### Positional API
+
   ```elixir
   AWSAuth.sign_authorization_header(
     access_key,
@@ -28,38 +53,6 @@ defmodule AWSAuth do
     session_token
   )
   ```
-
-  ### New credential struct API
-  ```elixir
-  creds = %AWSAuth.Credentials{
-    access_key_id: access_key,
-    secret_access_key: secret_key,
-    session_token: session_token,
-    region: "us-east-1"
-  }
-
-  # Or load from environment
-  creds = AWSAuth.Credentials.from_env()
-
-  # Simpler function call
-  AWSAuth.sign_authorization_header(
-    creds,
-    "POST",
-    url,
-    "bedrock",
-    headers,
-    body
-  )
-  ```
-
-  ### With Req plugin
-  ```elixir
-  creds = AWSAuth.Credentials.from_env()
-
-  Req.new(url: url, method: :post, body: body)
-  |> AWSAuth.Req.attach(credentials: creds, service: "bedrock")
-  |> Req.request()
-  ```
   """
 
   alias AWSAuth.Credentials
@@ -68,6 +61,8 @@ defmodule AWSAuth do
   Signs a URL using AWS Signature V4 with a Credentials struct.
 
   This is a convenience overload that accepts an `AWSAuth.Credentials` struct.
+  The URL path is signed as it will appear on the wire, so pass it percent-encoded.
+  Existing query parameters are decoded and re-encoded into the presigned URL (`+` in the wire query is signed as a space; send `%2B` for a literal plus).
 
   ## Parameters
 
@@ -81,8 +76,9 @@ defmodule AWSAuth do
       * `:timestamp` - `NaiveDateTime` for signing (default: current time)
       * `:region` - Override region from credentials (auto-detected from URL if not provided)
       * `:expires_in` - Expiration time in seconds for presigned URLs (default: 900, max: 604800)
-      * `:uri_escape_path` - Enable/disable URI path escaping (default: `true`)
+      * `:uri_escape_path` - Enable/disable URI path escaping (default: `false` for S3-family services, `true` otherwise)
       * `:unsigned_headers` - List of header names to exclude from signing (default: `[]`)
+      * `:auth_scheme` - Authentication scheme (`:sigv4` or `:s3express_session`; when `:s3express_session`, emits `X-Amz-S3session-Token` instead of `X-Amz-Security-Token`, default: `:sigv4`)
 
   ## Examples
 
@@ -100,16 +96,15 @@ defmodule AWSAuth do
     payload = Keyword.get(opts, :payload, "")
     timestamp = Keyword.get(opts, :timestamp, current_time())
 
-    # Auto-detect service and region from URL if not provided
     {detected_service, detected_region} = AWSAuth.Utils.parse_aws_url(url)
     service = resolve_service!(service || detected_service, url)
     region = Keyword.get(opts, :region, creds.region || detected_region || "us-east-1")
 
-    # Extract opts for query parameters signing
-    query_opts = [
-      expires_in: Keyword.get(opts, :expires_in, 900),
-      uri_escape_path: Keyword.get(opts, :uri_escape_path, true)
-    ]
+    query_opts =
+      [
+        expires_in: Keyword.get(opts, :expires_in, 900),
+        unsigned_headers: Keyword.get(opts, :unsigned_headers, [])
+      ] ++ Keyword.take(opts, [:uri_escape_path, :auth_scheme, :s3express_session])
 
     sign_url(
       creds.access_key_id,
@@ -128,6 +123,9 @@ defmodule AWSAuth do
 
   @doc """
   `AWSAuth.sign_url(access_key, secret_key, http_method, url, region, service, headers, request_time, payload, session_token)`
+
+  The URL path is signed as it will appear on the wire, so pass it percent-encoded.
+  Existing query parameters are decoded and re-encoded into the presigned URL (`+` in the wire query is signed as a space; send `%2B` for a literal plus).
 
   `access_key`: Your AWS Access key
 
@@ -250,6 +248,8 @@ defmodule AWSAuth do
   Signs request headers using AWS Signature V4 with a Credentials struct.
 
   This is a convenience overload that accepts an `AWSAuth.Credentials` struct.
+  The URL path is signed as it will appear on the wire, so pass it percent-encoded.
+  `+` in the wire query is signed as a space; send `%2B` for a literal plus.
 
   ## Parameters
 
@@ -258,7 +258,7 @@ defmodule AWSAuth do
     * `url` - The AWS URL to sign
     * `service` - AWS service name (e.g., "s3", "bedrock"). Can be `nil` to auto-detect from URL.
     * `opts` - Keyword list of options:
-      * `:headers` - Request headers as map (default: `%{}`)
+      * `:headers` - Request headers as map or `{name, value}` list (default: `%{}`)
       * `:payload` - Request body (default: `""`), `:unsigned` for streaming
         uploads, or `:streaming_events` to seed an event-stream request
         (`x-amz-content-sha256: STREAMING-AWS4-HMAC-SHA256-EVENTS`; see `AWSAuth.EventStream`)
@@ -266,8 +266,9 @@ defmodule AWSAuth do
       * `:region` - Override region from credentials (auto-detected from URL if not provided)
       * `:return_format` - Return format (`:list`, `:map`, `:req`) (default: `:list`)
       * `:unsigned_headers` - List of header names to exclude from signing (default: `[]`)
-      * `:uri_escape_path` - Enable/disable URI path escaping (default: `true`)
+      * `:uri_escape_path` - Enable/disable URI path escaping (default: `false` for S3-family services, `true` otherwise)
       * `:apply_checksum_header` - Include x-amz-content-sha256 header (default: `true`)
+      * `:auth_scheme` - Authentication scheme (`:sigv4` or `:s3express_session`; when `:s3express_session`, emits `x-amz-s3session-token` instead of `x-amz-security-token`, default: `:sigv4`)
 
   ## Return Formats
 
@@ -308,17 +309,15 @@ defmodule AWSAuth do
     timestamp = Keyword.get(opts, :timestamp, current_time())
     return_format = Keyword.get(opts, :return_format, :list)
 
-    # Auto-detect service and region from URL if not provided
     {detected_service, detected_region} = AWSAuth.Utils.parse_aws_url(url)
     service = resolve_service!(service || detected_service, url)
     region = Keyword.get(opts, :region, creds.region || detected_region || "us-east-1")
 
-    # Extract signing options
-    signing_opts = [
-      unsigned_headers: Keyword.get(opts, :unsigned_headers, []),
-      uri_escape_path: Keyword.get(opts, :uri_escape_path, true),
-      apply_checksum_header: Keyword.get(opts, :apply_checksum_header, true)
-    ]
+    signing_opts =
+      [
+        unsigned_headers: Keyword.get(opts, :unsigned_headers, []),
+        apply_checksum_header: Keyword.get(opts, :apply_checksum_header, true)
+      ] ++ Keyword.take(opts, [:uri_escape_path, :auth_scheme, :s3express_session])
 
     signed_headers =
       sign_authorization_header(
@@ -340,6 +339,9 @@ defmodule AWSAuth do
 
   @doc """
   `AWSAuth.sign_authorization_header(access_key, secret_key, http_method, url, region, service, headers, payload, request_time, session_token)`
+
+  The URL path is signed as it will appear on the wire, so pass it percent-encoded.
+  `+` in the wire query is signed as a space; send `%2B` for a literal plus.
 
   `access_key`: Your AWS Access key
 
@@ -504,7 +506,6 @@ defmodule AWSAuth do
     )
   end
 
-  # Format signed headers into different return formats
   defp format_headers(headers, :list), do: headers
   defp format_headers(headers, :map), do: Map.new(headers)
   defp format_headers(headers, :req), do: Map.new(headers, fn {k, v} -> {k, [v]} end)

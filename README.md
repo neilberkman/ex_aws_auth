@@ -248,7 +248,7 @@ headers = AWSAuth.sign_authorization_header(creds, "POST", url, "service",
   unsigned_headers: ["user-agent", "accept-encoding"]
 )
 
-# Disable URI path escaping (for pre-encoded paths)
+# Override URI path escaping (`uri_escape_path: false` is already the default for S3-family services)
 signed_url = AWSAuth.sign_url(creds, "GET", url, "s3",
   uri_escape_path: false
 )

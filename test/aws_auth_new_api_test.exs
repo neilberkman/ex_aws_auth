@@ -367,4 +367,141 @@ defmodule AWSAuth.NewAPITest do
       assert headers["authorization"] =~ ~r/Signature=[0-9a-f]{64}/
     end
   end
+
+  describe "header normalization, collisions, host override, and unsigned headers" do
+    test "capitalized Host header yields a single lowercase host and SignedHeaders=host;...", %{
+      creds: creds
+    } do
+      headers =
+        AWSAuth.sign_authorization_header(
+          creds,
+          "GET",
+          "https://s3.amazonaws.com/",
+          "s3",
+          headers: %{"Host" => "s3.amazonaws.com", "Content-Type" => "text/plain"},
+          timestamp: ~N[2025-01-01 00:00:00]
+        )
+
+      host_entries = Enum.filter(headers, fn {k, _v} -> String.downcase(k) == "host" end)
+      assert host_entries == [{"host", "s3.amazonaws.com"}]
+      assert {"content-type", "text/plain"} in headers
+
+      {_, auth} = List.keyfind(headers, "authorization", 0)
+
+      assert auth =~
+               "SignedHeaders=content-type;host;x-amz-content-sha256;x-amz-date;x-amz-security-token"
+
+      refute auth =~ "host;host"
+    end
+
+    test "explicit host header is preserved over URL host", %{creds: creds} do
+      headers =
+        AWSAuth.sign_authorization_header(
+          creds,
+          "GET",
+          "http://localhost:4566/bucket/key",
+          "s3",
+          headers: %{"host" => "custom"},
+          timestamp: ~N[2025-01-01 00:00:00],
+          return_format: :map
+        )
+
+      assert headers["host"] == "custom"
+    end
+
+    test "case-insensitive map header collision with different values raises ArgumentError", %{
+      creds: creds
+    } do
+      assert_raise ArgumentError, ~r/x-amz-meta-a/, fn ->
+        AWSAuth.sign_authorization_header(
+          creds,
+          "GET",
+          "https://s3.amazonaws.com/bucket/key",
+          "s3",
+          headers: %{"X-Amz-Meta-A" => "1", "x-amz-meta-a" => "2"}
+        )
+      end
+    end
+
+    test "case-insensitive map header collision with identical trimmed values deduplicates", %{
+      creds: creds
+    } do
+      headers =
+        AWSAuth.sign_authorization_header(
+          creds,
+          "GET",
+          "https://s3.amazonaws.com/bucket/key",
+          "s3",
+          headers: %{"X-Amz-Meta-A" => "1", "x-amz-meta-a" => " 1 "},
+          return_format: :map
+        )
+
+      assert headers["x-amz-meta-a"] == "1"
+    end
+
+    test "list input with repeated header names comma-joins in order", %{creds: creds} do
+      headers =
+        AWSAuth.sign_authorization_header(
+          creds,
+          "GET",
+          "https://s3.amazonaws.com/bucket/key",
+          "s3",
+          headers: [{"x-amz-meta-tag", "a"}, {"x-amz-meta-tag", "b"}],
+          return_format: :map
+        )
+
+      assert headers["x-amz-meta-tag"] == "a,b"
+      assert headers["authorization"] =~ "x-amz-meta-tag"
+    end
+
+    test "default and custom unsigned_headers exclude headers from SignedHeaders but keep them in returned list",
+         %{
+           creds: creds
+         } do
+      headers =
+        AWSAuth.sign_authorization_header(
+          creds,
+          "GET",
+          "https://s3.amazonaws.com/bucket/key",
+          "s3",
+          headers: %{
+            "User-Agent" => "my-agent",
+            "Expect" => "100-continue",
+            "X-Custom-Unsigned" => "skip-me",
+            "x-amz-acl" => "public-read"
+          },
+          unsigned_headers: ["x-custom-unsigned"]
+        )
+
+      assert {"user-agent", "my-agent"} in headers
+      assert {"expect", "100-continue"} in headers
+      assert {"x-custom-unsigned", "skip-me"} in headers
+      {_, auth} = List.keyfind(headers, "authorization", 0)
+      refute auth =~ "user-agent"
+      refute auth =~ "expect"
+      refute auth =~ "x-custom-unsigned"
+      assert auth =~ "x-amz-acl"
+    end
+
+    test "sign_url honors unsigned_headers", %{creds: creds} do
+      signed_url =
+        AWSAuth.sign_url(
+          creds,
+          "PUT",
+          "https://s3.amazonaws.com/bucket/key",
+          "s3",
+          headers: %{"x-amz-acl" => "public-read", "x-amz-meta-keep" => "1"},
+          unsigned_headers: ["x-amz-acl"]
+        )
+
+      signed_headers =
+        signed_url
+        |> URI.parse()
+        |> Map.fetch!(:query)
+        |> URI.decode_query()
+        |> Map.fetch!("X-Amz-SignedHeaders")
+
+      assert signed_headers == "host;x-amz-meta-keep"
+    end
+  end
 end
