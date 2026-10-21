@@ -504,4 +504,48 @@ defmodule AWSAuth.NewAPITest do
       assert signed_headers == "host;x-amz-meta-keep"
     end
   end
+
+  describe "region resolution precedence (D1)" do
+    test "URL region beats credentials.region; explicit region beats URL; credentials.region covers non-regional hosts" do
+      creds_east = %Credentials{
+        access_key_id: "AKIDEXAMPLE",
+        region: "us-east-1",
+        secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+      }
+
+      creds_west = %{creds_east | region: "us-west-2"}
+
+      # URL region (eu-west-1) beats credentials.region (us-east-1)
+      headers =
+        AWSAuth.sign_authorization_header(
+          creds_east,
+          "GET",
+          "https://b.s3.eu-west-1.amazonaws.com/k",
+          "s3",
+          return_format: :map
+        )
+
+      assert headers["authorization"] =~ "/eu-west-1/s3/aws4_request"
+
+      # Explicit :region beats URL region
+      override_headers =
+        AWSAuth.sign_authorization_header(
+          creds_east,
+          "GET",
+          "https://b.s3.eu-west-1.amazonaws.com/k",
+          "s3",
+          region: "ap-northeast-1",
+          return_format: :map
+        )
+
+      assert override_headers["authorization"] =~ "/ap-northeast-1/s3/aws4_request"
+
+      # Global AWS endpoint resolves us-east-1
+      assert AWSAuth.resolve_region(nil, "https://iam.amazonaws.com", creds_west) == "us-east-1"
+
+      # Non-AWS host falls back to credentials.region
+      assert AWSAuth.resolve_region(nil, "http://localhost:4566/bucket/key", creds_west) ==
+               "us-west-2"
+    end
+  end
 end
