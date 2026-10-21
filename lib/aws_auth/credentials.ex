@@ -47,6 +47,7 @@ defmodule AWSAuth.Credentials do
           session_token: String.t() | nil
         }
 
+  @derive {Inspect, except: [:secret_access_key, :session_token]}
   defstruct [
     :access_key_id,
     :region,
@@ -67,12 +68,7 @@ defmodule AWSAuth.Credentials do
       System.put_env("AWS_REGION", "us-west-2")
 
       creds = AWSAuth.Credentials.from_env()
-      # => %AWSAuth.Credentials{
-      #      access_key_id: "AKIAIOSFODNN7EXAMPLE",
-      #      secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
-      #      region: "us-west-2",
-      #      session_token: nil
-      #    }
+      # => #AWSAuth.Credentials<access_key_id: "AKIAIOSFODNN7EXAMPLE", region: "us-west-2", ...>
 
       # Without required environment variables
       System.delete_env("AWS_ACCESS_KEY_ID")
@@ -84,7 +80,6 @@ defmodule AWSAuth.Credentials do
     access_key_id = System.get_env("AWS_ACCESS_KEY_ID")
     secret_access_key = System.get_env("AWS_SECRET_ACCESS_KEY")
 
-    # Return nil if required credentials are missing
     if access_key_id && secret_access_key do
       %__MODULE__{
         access_key_id: access_key_id,

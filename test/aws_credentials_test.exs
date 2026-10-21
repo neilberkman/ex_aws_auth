@@ -29,6 +29,22 @@ defmodule AWSAuth.CredentialsTest do
       assert is_nil(creds.session_token)
       assert is_nil(creds.region)
     end
+
+    test "inspect/1 redacts secret_access_key and session_token" do
+      creds = %Credentials{
+        access_key_id: "AKIAIOSFODNN7EXAMPLE",
+        region: "us-east-1",
+        secret_access_key: "SUPER_SECRET_KEY_VALUE",
+        session_token: "SUPER_SECRET_SESSION_TOKEN"
+      }
+
+      inspected = inspect(creds)
+
+      assert inspected =~ "AKIAIOSFODNN7EXAMPLE"
+      assert inspected =~ "us-east-1"
+      refute inspected =~ "SUPER_SECRET_KEY_VALUE"
+      refute inspected =~ "SUPER_SECRET_SESSION_TOKEN"
+    end
   end
 
   describe "from_env/0" do
