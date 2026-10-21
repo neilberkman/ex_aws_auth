@@ -58,6 +58,18 @@ defmodule AWSAuth do
   alias AWSAuth.Credentials
 
   @doc """
+  Resolves the AWS signing region using the precedence:
+  `explicit` > region detected from `url` > `credentials.region` > `"us-east-1"`.
+  """
+  @spec resolve_region(String.t() | nil, String.t() | URI.t(), Credentials.t() | nil) ::
+          String.t()
+  def resolve_region(explicit, url, credentials \\ nil) do
+    {_detected_service, detected_region} = AWSAuth.Utils.parse_aws_url(to_string(url))
+    cred_region = if credentials, do: credentials.region
+    explicit || detected_region || cred_region || "us-east-1"
+  end
+
+  @doc """
   Signs a URL using AWS Signature V4 with a Credentials struct.
 
   This is a convenience overload that accepts an `AWSAuth.Credentials` struct.
@@ -74,7 +86,7 @@ defmodule AWSAuth do
       * `:headers` - Request headers (default: `%{}`)
       * `:payload` - Request body (default: `""`) or `:unsigned` for streaming
       * `:timestamp` - `NaiveDateTime` for signing (default: current time)
-      * `:region` - Override region from credentials (auto-detected from URL if not provided)
+      * `:region` - Override region (otherwise resolved from URL, then credentials, then `"us-east-1"`)
       * `:expires_in` - Expiration time in seconds for presigned URLs (default: 900, max: 604800)
       * `:uri_escape_path` - Enable/disable URI path escaping (default: `false` for S3-family services, `true` otherwise)
       * `:unsigned_headers` - List of header names to exclude from signing (default: `[]`)
@@ -96,9 +108,9 @@ defmodule AWSAuth do
     payload = Keyword.get(opts, :payload, "")
     timestamp = Keyword.get(opts, :timestamp, current_time())
 
-    {detected_service, detected_region} = AWSAuth.Utils.parse_aws_url(url)
+    {detected_service, _detected_region} = AWSAuth.Utils.parse_aws_url(url)
     service = resolve_service!(service || detected_service, url)
-    region = Keyword.get(opts, :region, creds.region || detected_region || "us-east-1")
+    region = resolve_region(Keyword.get(opts, :region), url, creds)
 
     query_opts =
       [
@@ -263,7 +275,7 @@ defmodule AWSAuth do
         uploads, or `:streaming_events` to seed an event-stream request
         (`x-amz-content-sha256: STREAMING-AWS4-HMAC-SHA256-EVENTS`; see `AWSAuth.EventStream`)
       * `:timestamp` - `NaiveDateTime` for signing (default: current time)
-      * `:region` - Override region from credentials (auto-detected from URL if not provided)
+      * `:region` - Override region (otherwise resolved from URL, then credentials, then `"us-east-1"`)
       * `:return_format` - Return format (`:list`, `:map`, `:req`) (default: `:list`)
       * `:unsigned_headers` - List of header names to exclude from signing (default: `[]`)
       * `:uri_escape_path` - Enable/disable URI path escaping (default: `false` for S3-family services, `true` otherwise)
@@ -309,9 +321,9 @@ defmodule AWSAuth do
     timestamp = Keyword.get(opts, :timestamp, current_time())
     return_format = Keyword.get(opts, :return_format, :list)
 
-    {detected_service, detected_region} = AWSAuth.Utils.parse_aws_url(url)
+    {detected_service, _detected_region} = AWSAuth.Utils.parse_aws_url(url)
     service = resolve_service!(service || detected_service, url)
-    region = Keyword.get(opts, :region, creds.region || detected_region || "us-east-1")
+    region = resolve_region(Keyword.get(opts, :region), url, creds)
 
     signing_opts =
       [
