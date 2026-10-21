@@ -331,4 +331,35 @@ defmodule AWSAuth.UtilsTest do
     assert AWSAuth.Utils.parse_aws_url("https://unknown.thing.us-east-1.amazonaws.com") ==
              {nil, nil}
   end
+
+  test "build_canonical_request sorts canonical headers by header name, not name:value" do
+    canonical =
+      AWSAuth.Utils.build_canonical_request(
+        "PUT",
+        "/k",
+        [],
+        %{
+          "host" => "example.com",
+          "x-amz-meta-a" => "1",
+          "x-amz-meta-a-b" => "2",
+          "x-amz-meta-a1" => "3"
+        },
+        "hash",
+        false
+      )
+
+    assert canonical ==
+             "PUT\n/k\n\nhost:example.com\nx-amz-meta-a:1\nx-amz-meta-a-b:2\nx-amz-meta-a1:3\n\nhost;x-amz-meta-a;x-amz-meta-a-b;x-amz-meta-a1\nhash"
+  end
+
+  test "host_header/1 formats default ports, non-default ports, and IPv6 literals" do
+    assert AWSAuth.Utils.host_header(URI.parse("https://h:443/")) == "h"
+    assert AWSAuth.Utils.host_header(URI.parse("http://h:80/")) == "h"
+
+    assert AWSAuth.Utils.host_header(URI.parse("http://localhost:4566/bucket/key")) ==
+             "localhost:4566"
+
+    assert AWSAuth.Utils.host_header(URI.parse("http://[::1]:4566/")) == "[::1]:4566"
+    assert AWSAuth.Utils.host_header(URI.parse("http://[::1]/")) == "[::1]"
+  end
 end

@@ -19,16 +19,22 @@ defmodule AWSAuth.QueryParameters do
 
     http_method = String.upcase(http_method)
     region = String.downcase(region)
-    service = String.downcase(service)
+    service = to_string(service)
+
+    unsigned_headers = Keyword.get(opts, :unsigned_headers, [])
+    expires_in = opts |> Keyword.get(:expires_in, 900) |> normalize_expires_in!()
+    uri_escape_path = resolve_uri_escape_path(opts, service)
 
     headers =
       headers
-      |> AWSAuth.Utils.filter_unsignable_headers()
-      |> AWSAuth.Utils.normalize_header_values()
-      |> Map.put_new("host", uri.host)
+      |> AWSAuth.Utils.normalize_headers()
+      |> Map.drop(["x-amz-security-token", "x-amz-s3session-token"])
+      |> Map.put_new("host", AWSAuth.Utils.host_header(uri))
 
-    amz_date = request_time |> AWSAuth.Utils.format_time()
-    date = request_time |> AWSAuth.Utils.format_date()
+    {to_sign, _passthrough} = AWSAuth.Utils.split_unsigned_headers(headers, unsigned_headers)
+
+    amz_date = AWSAuth.Utils.format_time(request_time)
+    date = AWSAuth.Utils.format_date(request_time)
 
     scope = "#{date}/#{region}/#{service}/aws4_request"
 
@@ -38,12 +44,12 @@ defmodule AWSAuth.QueryParameters do
           []
 
         _ ->
-          Enum.to_list(URI.query_decoder(uri.query))
+          uri.query
+          |> URI.query_decoder()
+          |> Enum.reject(fn {key, _value} ->
+            key in ["X-Amz-Signature", "X-Amz-Security-Token", "X-Amz-S3session-Token"]
+          end)
       end
-
-    # Default expiration is 15 minutes (900 seconds), max is 7 days (604800 seconds)
-    expires_in = opts |> Keyword.get(:expires_in, 900) |> normalize_expires_in!()
-    uri_escape_path = Keyword.get(opts, :uri_escape_path, true)
 
     params =
       params
@@ -51,18 +57,26 @@ defmodule AWSAuth.QueryParameters do
       |> put_param("X-Amz-Credential", "#{access_key}/#{scope}")
       |> put_param("X-Amz-Date", amz_date)
       |> put_param("X-Amz-Expires", to_string(expires_in))
-      |> put_param("X-Amz-SignedHeaders", AWSAuth.Utils.signed_headers(headers))
+      |> put_param("X-Amz-SignedHeaders", AWSAuth.Utils.signed_headers(to_sign))
 
-    # Add session token to query params if provided (for temporary credentials)
+    s3express_session =
+      Keyword.get(opts, :auth_scheme) == :s3express_session or
+        Keyword.get(opts, :s3express_session, false) == true
+
+    token_param =
+      if s3express_session,
+        do: "X-Amz-S3session-Token",
+        else: "X-Amz-Security-Token"
+
     params =
       if session_token do
-        put_param(params, "X-Amz-Security-Token", session_token)
+        put_param(params, token_param, session_token)
       else
         params
       end
 
     hashed_payload =
-      if service == "s3",
+      if AWSAuth.Utils.s3_family?(service),
         do: :unsigned,
         else: AWSAuth.Utils.hash_sha256(payload)
 
@@ -71,7 +85,7 @@ defmodule AWSAuth.QueryParameters do
         http_method,
         uri.path || "/",
         params,
-        headers,
+        to_sign,
         hashed_payload,
         uri_escape_path
       )
@@ -85,6 +99,13 @@ defmodule AWSAuth.QueryParameters do
     query_string = AWSAuth.Utils.canonical_query_string(params)
 
     "#{uri.scheme}://#{uri.authority}#{uri.path || "/"}?#{query_string}"
+  end
+
+  defp resolve_uri_escape_path(opts, service) do
+    case Keyword.fetch(opts, :uri_escape_path) do
+      {:ok, value} when is_boolean(value) -> value
+      _ -> not AWSAuth.Utils.s3_family?(service)
+    end
   end
 
   defp put_param(params, key, value) do

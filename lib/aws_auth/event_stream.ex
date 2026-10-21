@@ -94,7 +94,7 @@ defmodule AWSAuth.EventStream do
       )
       when is_binary(prior_signature) and is_binary(header_bytes) do
     region = (opts[:region] || credentials.region || "us-east-1") |> String.downcase()
-    service = String.downcase(service)
+    service = to_string(service)
 
     naive = to_naive(request_time)
     amz_date = Utils.format_time(naive)

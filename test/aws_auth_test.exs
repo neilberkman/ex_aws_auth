@@ -49,7 +49,7 @@ defmodule AWSAuthTest do
         "AKIAIOSFODNN7EXAMPLE",
         "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
         "PUT",
-        "https://examplebucket.s3.amazonaws.com/test$file.text",
+        "https://examplebucket.s3.amazonaws.com/test%24file.text",
         "us-east-1",
         "s3",
         headers,
@@ -189,12 +189,12 @@ defmodule AWSAuthTest do
         @time
       )
 
-    # Trace header should not appear in signed headers
+    # Trace header should not appear in signed headers, but is preserved in returned headers
     {"authorization", auth_value} = List.keyfind(signed_request, "authorization", 0)
     refute auth_value =~ "x-amzn-trace-id"
 
-    # Trace header should not be in the returned headers
-    refute List.keyfind(signed_request, "x-amzn-trace-id", 0)
+    assert List.keyfind(signed_request, "x-amzn-trace-id", 0) ==
+             {"x-amzn-trace-id", "Root=1-abc-123"}
   end
 
   test "sign_authorization_header normalizes header values with multiple spaces" do

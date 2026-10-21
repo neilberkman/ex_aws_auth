@@ -1,42 +1,145 @@
 defmodule AWSAuth.Utils do
   @moduledoc false
 
-  @doc """
-  Filters out headers that should not be included in signing.
-  AWS infrastructure may add trace headers that would break the signature.
-  Additional headers can be excluded via the unsigned_headers option.
-  """
-  def filter_unsignable_headers(headers, unsigned_headers \\ []) do
-    default_unsigned = ["x-amzn-trace-id"]
-    all_unsigned = default_unsigned ++ Enum.map(unsigned_headers, &String.downcase/1)
+  @s3_signing_names ["s3", "s3-outposts", "s3-object-lambda", "s3express"]
+  @default_unsigned_headers [
+    "connection",
+    "expect",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "te",
+    "trailer",
+    "transfer-encoding",
+    "upgrade",
+    "user-agent",
+    "x-amzn-trace-id"
+  ]
 
+  @doc """
+  Returns `true` if `service` uses S3-family canonical path rules (no extra
+  percent-encoding and no dot-segment normalization).
+  """
+  def s3_family?(service) when is_binary(service) do
+    String.downcase(service, :ascii) in @s3_signing_names
+  end
+
+  def s3_family?(_service), do: false
+
+  @doc """
+  Normalizes caller headers into a map with lowercase (`:ascii`) keys and
+  whitespace-normalized values.
+
+  Accepts a map or a list of `{name, value}` tuples; `value` may be a binary or
+  a list of binaries (Req format). Case-insensitive duplicate header names in a
+  map with identical normalized values collapse to a single entry, and raise
+  `ArgumentError` when their values differ. List inputs and list-valued entries
+  preserve every value in order and comma-join them (`"a,b"`, `"a,a"`).
+  """
+  def normalize_headers(headers) when is_map(headers) do
     headers
-    |> Enum.reject(fn {key, _value} ->
-      String.downcase(key) in all_unsigned
+    |> Enum.map(fn {key, value} ->
+      {String.downcase(to_string(key), :ascii), normalize_entry_value(value)}
     end)
-    |> Map.new()
+    |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
+    |> Map.new(fn {name, values} ->
+      case Enum.uniq(values) do
+        [single] ->
+          {name, single}
+
+        _multiple ->
+          raise ArgumentError,
+                "case-insensitive header collision with different values for #{inspect(name)}"
+      end
+    end)
+  end
+
+  def normalize_headers(headers) when is_list(headers) do
+    headers
+    |> Enum.map(fn {key, value} ->
+      {String.downcase(to_string(key), :ascii), normalize_entry_value(value)}
+    end)
+    |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
+    |> Map.new(fn {name, values} -> {name, Enum.join(values, ",")} end)
+  end
+
+  defp normalize_entry_value(values) when is_list(values) do
+    Enum.map_join(values, ",", &normalize_header_value/1)
+  end
+
+  defp normalize_entry_value(value), do: normalize_header_value(value)
+
+  @doc """
+  Splits normalized headers into `{to_sign, passthrough}` maps based on the
+  default unsignable headers (`botocore.auth.SIGNED_HEADERS_BLACKLIST`) and
+  `unsigned_headers`.
+  """
+  def split_unsigned_headers(headers, unsigned_headers \\ []) do
+    unsigned_set =
+      @default_unsigned_headers
+      |> Enum.concat(Enum.map(unsigned_headers, &String.downcase(to_string(&1), :ascii)))
+      |> MapSet.new()
+
+    {unsigned, signable} =
+      Enum.split_with(headers, fn {key, _value} ->
+        MapSet.member?(unsigned_set, String.downcase(to_string(key), :ascii))
+      end)
+
+    {Map.new(signable), Map.new(unsigned)}
   end
 
   @doc """
-  Normalizes header values by collapsing multiple consecutive spaces into a single space.
+  Filters out headers that should not be included in signing.
+  AWS infrastructure and HTTP clients may add hop-by-hop, user-agent, or trace
+  headers that should not be signed. Additional headers can be excluded via the
+  `unsigned_headers` option.
+  """
+  def filter_unsignable_headers(headers, unsigned_headers \\ []) do
+    {to_sign, _passthrough} = split_unsigned_headers(headers, unsigned_headers)
+    to_sign
+  end
+
+  @doc """
+  Normalizes a single header value by trimming and collapsing runs of ASCII
+  whitespace (`[ \\t\\r\\n\\f\\v]+`) into a single space.
+  """
+  def normalize_header_value(value) do
+    value
+    |> to_string()
+    |> then(&Regex.replace(~r/[ \t\r\n\f\v]+/, &1, " "))
+    |> String.trim(" ")
+  end
+
+  @doc """
+  Normalizes header values by collapsing runs of ASCII whitespace into a single space.
   This is required by AWS Signature V4 specification.
   """
   def normalize_header_values(headers) do
-    headers
-    |> Map.new(fn {key, value} ->
-      normalized_value =
-        value
-        |> to_string()
-        |> remove_dup_spaces()
-
-      {key, normalized_value}
+    Map.new(headers, fn {key, value} ->
+      {key, normalize_header_value(value)}
     end)
   end
 
-  defp remove_dup_spaces(string) do
-    case Regex.replace(~r/  +/, string, " ") do
-      ^string -> string
-      result -> remove_dup_spaces(result)
+  @doc """
+  Builds the canonical `host` header value for a `%URI{}`.
+
+  Wraps IPv6 literals in `[` and `]` and appends `:port` when `uri.port` is
+  non-nil and differs from `URI.default_port(uri.scheme)`.
+  """
+  def host_header(%URI{host: nil}), do: nil
+
+  def host_header(%URI{host: host, port: port, scheme: scheme}) do
+    bracketed_host =
+      if String.contains?(host, ":") and not String.starts_with?(host, "[") do
+        "[#{host}]"
+      else
+        host
+      end
+
+    if is_nil(port) or port == URI.default_port(scheme) do
+      bracketed_host
+    else
+      "#{bracketed_host}:#{port}"
     end
   end
 
@@ -44,6 +147,10 @@ defmodule AWSAuth.Utils do
   Validates that query parameter keys and values are not lists.
   Lists in query parameters can cause encoding issues.
   """
+  def validate_query_params(nil), do: nil
+  def validate_query_params(query) when is_binary(query), do: query
+  def validate_query_params({:raw, params}), do: {:raw, validate_query_params(params)}
+
   def validate_query_params(params) do
     Enum.each(params, fn {key, value} ->
       if is_list(key) or is_list(value) do
@@ -66,12 +173,18 @@ defmodule AWSAuth.Utils do
     validate_query_params(params)
     query_params = canonical_query_string(params)
 
-    header_params =
-      Enum.map(headers, fn {key, value} -> "#{String.downcase(key)}:#{String.trim(value)}" end)
-      |> Enum.sort(&(&1 < &2))
-      |> Enum.join("\n")
+    sorted_headers =
+      headers
+      |> Enum.map(fn {key, value} ->
+        {String.downcase(to_string(key), :ascii), normalize_header_value(value)}
+      end)
+      |> Enum.sort_by(&elem(&1, 0))
 
-    signed_header_params = signed_headers(headers)
+    header_params =
+      Enum.map_join(sorted_headers, "\n", fn {key, value} -> "#{key}:#{value}" end)
+
+    signed_header_params =
+      Enum.map_join(sorted_headers, ";", &elem(&1, 0))
 
     hashed_payload =
       if hashed_payload == :unsigned,
@@ -81,6 +194,7 @@ defmodule AWSAuth.Utils do
     encoded_path =
       if uri_escape_path do
         path
+        |> normalize_url_path()
         |> String.split("/")
         |> Enum.map_join("/", &uri_encode/1)
       else
@@ -88,6 +202,34 @@ defmodule AWSAuth.Utils do
       end
 
     "#{http_method}\n#{encoded_path}\n#{query_params}\n#{header_params}\n\n#{signed_header_params}\n#{hashed_payload}"
+  end
+
+  @doc """
+  Normalizes a URL path for non-S3 services by collapsing empty segments and
+  resolving `.` and `..` segments per RFC 3986 / `botocore.utils.normalize_url_path`.
+  """
+  def normalize_url_path(nil), do: "/"
+  def normalize_url_path(""), do: "/"
+  def normalize_url_path(path) when is_binary(path), do: remove_dot_segments(path)
+
+  def remove_dot_segments(""), do: ""
+
+  def remove_dot_segments(path) when is_binary(path) do
+    output_segments =
+      path
+      |> String.split("/")
+      |> Enum.reduce([], fn
+        segment, acc when segment in ["", "."] -> acc
+        "..", [] -> []
+        "..", [_ | rest] -> rest
+        segment, acc -> [segment | acc]
+      end)
+      |> Enum.reverse()
+
+    leading = if String.starts_with?(path, "/"), do: "/", else: ""
+    trailing = if String.ends_with?(path, "/") and output_segments != [], do: "/", else: ""
+
+    leading <> Enum.join(output_segments, "/") <> trailing
   end
 
   @doc """
@@ -124,7 +266,7 @@ defmodule AWSAuth.Utils do
 
   def signed_headers(headers) do
     headers
-    |> Enum.map(fn {key, _value} -> String.downcase(key) end)
+    |> Enum.map(fn {key, _value} -> String.downcase(to_string(key), :ascii) end)
     |> Enum.sort()
     |> Enum.join(";")
   end
@@ -151,11 +293,7 @@ defmodule AWSAuth.Utils do
     |> bytes_to_string()
   end
 
-  if Code.ensure_loaded?(:crypto) and function_exported?(:crypto, :mac, 4) do
-    def hmac_sha256(key, data), do: :crypto.mac(:hmac, :sha256, key, data)
-  else
-    def hmac_sha256(key, data), do: :crypto.hmac(:sha256, key, data)
-  end
+  def hmac_sha256(key, data), do: :crypto.mac(:hmac, :sha256, key, data)
 
   def bytes_to_string(bytes) do
     Base.encode16(bytes, case: :lower)
