@@ -1,3 +1,28 @@
+## [1.5.0] - 2026-10-21
+
+### Fixed
+
+- S3-family requests (`s3`, `s3-outposts`, `s3-object-lambda`, `s3express`) sign the wire path verbatim and presign with `UNSIGNED-PAYLOAD` (with `auth_scheme: :s3express_session` opt-in for S3 Express `CreateSession` credentials using `x-amz-s3session-token` / `X-Amz-S3session-Token`); previously the path was percent-encoded a second time, so any key with a space, `+`, `(`, `=`, `@` or non-ASCII byte produced `SignatureDoesNotMatch` under default options.
+- Canonical headers are sorted by name, not by `name:value`.
+- Header names are case-folded before generated headers are added; `Host` no longer produces `SignedHeaders=host;host`.
+- Host header includes a non-default port and brackets IPv6 literals; presigned URLs for LocalStack/MinIO on a port now verify.
+- Non-S3 paths are normalized (`remove_dot_segments`, empty segments collapsed) before encoding.
+- Header values collapse all whitespace, not only spaces.
+- `sign_url/5` honors `:unsigned_headers`.
+- Unsigned headers (now defaulting to botocore's full `SIGNED_HEADERS_BLACKLIST`, including `user-agent`, `expect`, hop-by-hop headers, and `x-amzn-trace-id`) are excluded from signing but kept in the returned headers and in Req requests.
+- Req plugin: `host` is regenerated on re-sign and across origin changes; streaming bodies sign as `UNSIGNED-PAYLOAD`; multi-valued headers are comma-joined in order (preserving repeated values) instead of truncated; untrusted cross-origin redirects are not re-signed and unconditionally strip credential headers and `host`.
+- Service detection uses botocore's endpoint-prefix, endpoint-rules, and partition tables (96 unique prefixes, including China endpoint aliases), handles S3 FIPS/dual-stack/access-point/outposts/express endpoint variants, strips `-fips` per label, supports `.api.aws` and uppercase hostnames, and preserves mixed-case signing names (`IoTSecuredTunneling`, `IngestionService`).
+
+### Changed
+
+- Region precedence is explicit option, then URL, then `credentials.region`, then `us-east-1`. Previously `credentials.region` beat the URL.
+- Service names are preserved in their given case rather than lowercased so mixed-case AWS signing names (`IoTSecuredTunneling`, `IngestionService`) sign with a valid credential scope.
+- Returned header names are lowercase.
+- `credentials` structs redact the secret key and session token in `inspect/1`.
+- `attach/2` rejects unknown options.
+
+---
+
 ## [1.4.2] - 2026-09-03
 
 ### Fixed
@@ -117,6 +142,33 @@
 
 - Timestamp parameter now optional in credential struct APIs (defaults to current time)
 - All new APIs maintain 100% backward compatibility with existing function signatures
+
+### Migration Guide (1.2.0)
+
+```elixir
+# Positional API (still supported)
+AWSAuth.sign_authorization_header(
+  access_key,
+  secret_key,
+  "POST",
+  url,
+  "us-east-1",
+  "bedrock",
+  headers,
+  body,
+  NaiveDateTime.utc_now(),
+  session_token
+)
+
+# Credential struct API
+creds = AWSAuth.Credentials.from_env()
+AWSAuth.sign_authorization_header(creds, "POST", url, "bedrock", headers: headers, payload: body)
+
+# Req plugin
+Req.new(url: url, method: :post, body: body)
+|> AWSAuth.Req.attach(credentials: creds, service: "bedrock")
+|> Req.request()
+```
 
 ---
 
