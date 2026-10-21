@@ -10,7 +10,10 @@ defmodule AWSAuth.ReqTest do
       |> Req.Request.get_private(:capture_test_pid)
       |> send({:captured_request, request})
 
-      {request, Req.Response.new(status: 200)}
+      case Req.Request.get_private(request, :capture_redirect_fun) do
+        nil -> {request, Req.Response.new(status: 200)}
+        fun -> {request, fun.(request)}
+      end
     end
   end
 
@@ -156,6 +159,249 @@ defmodule AWSAuth.ReqTest do
            ]
 
     assert Req.Request.get_header(resigned_request, "x-amz-security-token") == [session_token]
+  end
+
+  test "resolves region from URL when credentials have no region or a different region", %{
+    credentials: credentials
+  } do
+    creds_no_region = %{credentials | region: nil}
+
+    request =
+      Req.new(
+        adapter: CaptureAdapter,
+        url: "https://b.s3.eu-west-1.amazonaws.com/k"
+      )
+      |> Req.Request.put_private(:capture_test_pid, self())
+      |> AWSReq.attach(credentials: creds_no_region, service: "s3")
+      |> run_and_capture_request()
+
+    assert [auth] = Req.Request.get_header(request, "authorization")
+    assert auth =~ "/eu-west-1/s3/aws4_request"
+  end
+
+  test "preserves x-amzn-trace-id and unsigned_headers on outgoing Req request", %{
+    credentials: credentials
+  } do
+    request =
+      Req.new(
+        adapter: CaptureAdapter,
+        url: "https://b.s3.us-east-1.amazonaws.com/k",
+        headers: %{
+          "x-amzn-trace-id" => "Root=1-abc-123",
+          "x-custom-unsigned" => "keep-me"
+        }
+      )
+      |> Req.Request.put_private(:capture_test_pid, self())
+      |> AWSReq.attach(
+        credentials: credentials,
+        service: "s3",
+        unsigned_headers: ["x-custom-unsigned"]
+      )
+      |> run_and_capture_request()
+
+    assert Req.Request.get_header(request, "x-amzn-trace-id") == ["Root=1-abc-123"]
+    assert Req.Request.get_header(request, "x-custom-unsigned") == ["keep-me"]
+    assert Req.Request.get_header(request, "user-agent") != []
+    assert [auth] = Req.Request.get_header(request, "authorization")
+    refute auth =~ "x-amzn-trace-id"
+    refute auth =~ "x-custom-unsigned"
+    refute auth =~ "user-agent"
+  end
+
+  test "comma-joins multi-valued headers in Req request and signature (including identical values)",
+       %{
+         credentials: credentials
+       } do
+    request =
+      Req.new(
+        adapter: CaptureAdapter,
+        url: "https://b.s3.us-east-1.amazonaws.com/k",
+        headers: [
+          {"x-amz-meta-tag", "a"},
+          {"x-amz-meta-tag", "b"},
+          {"x-amz-meta-dup", "a"},
+          {"x-amz-meta-dup", "a"}
+        ]
+      )
+      |> Req.Request.put_private(:capture_test_pid, self())
+      |> AWSReq.attach(credentials: credentials, service: "s3")
+      |> run_and_capture_request()
+
+    assert Req.Request.get_header(request, "x-amz-meta-tag") == ["a,b"]
+    assert Req.Request.get_header(request, "x-amz-meta-dup") == ["a,a"]
+    assert [auth] = Req.Request.get_header(request, "authorization")
+    assert auth =~ "x-amz-meta-tag"
+    assert auth =~ "x-amz-meta-dup"
+  end
+
+  test "streaming body with content-length signs as UNSIGNED-PAYLOAD; without content-length raises",
+       %{credentials: credentials} do
+    request =
+      Req.new(
+        adapter: CaptureAdapter,
+        method: :put,
+        url: "https://b.s3.us-east-1.amazonaws.com/k",
+        body: Stream.map(["ab"], & &1),
+        headers: %{"content-length" => "2"}
+      )
+      |> Req.Request.put_private(:capture_test_pid, self())
+      |> AWSReq.attach(credentials: credentials, service: "s3")
+      |> run_and_capture_request()
+
+    assert Req.Request.get_header(request, "x-amz-content-sha256") == ["UNSIGNED-PAYLOAD"]
+
+    assert_raise ArgumentError, ~r/content-length/, fn ->
+      Req.new(
+        adapter: CaptureAdapter,
+        method: :put,
+        url: "https://b.s3.us-east-1.amazonaws.com/k",
+        body: Stream.map(["ab"], & &1)
+      )
+      |> AWSReq.attach(credentials: credentials, service: "s3")
+      |> Req.Request.run_request()
+    end
+  end
+
+  test "attach payload: :streaming_events seeds STREAMING-AWS4-HMAC-SHA256-EVENTS", %{
+    credentials: credentials
+  } do
+    request =
+      Req.new(
+        adapter: CaptureAdapter,
+        method: :post,
+        url:
+          "https://bedrock-runtime.us-east-1.amazonaws.com/model/m/invoke-with-bidirectional-stream"
+      )
+      |> Req.Request.put_private(:capture_test_pid, self())
+      |> AWSReq.attach(credentials: credentials, service: "bedrock", payload: :streaming_events)
+      |> run_and_capture_request()
+
+    assert Req.Request.get_header(request, "x-amz-content-sha256") == [
+             "STREAMING-AWS4-HMAC-SHA256-EVENTS"
+           ]
+  end
+
+  test "attach rejects unknown options", %{credentials: credentials} do
+    assert_raise ArgumentError, ~r/unknown keys/, fn ->
+      Req.new(url: "https://b.s3.us-east-1.amazonaws.com/k")
+      |> AWSReq.attach(credentials: credentials, service: "s3", bogus_opt: true)
+    end
+  end
+
+  describe "redirects (D4)" do
+    test "untrusted cross-origin redirect strips generated signing headers and host", %{
+      credentials: credentials
+    } do
+      creds_with_token = %{credentials | session_token: "SESSION-TOKEN"}
+
+      redirect_fun = fn req ->
+        if req.url.host == "b.s3.us-east-1.amazonaws.com" do
+          Req.Response.new(status: 302)
+          |> Req.Response.put_header("location", "https://target.example/x")
+        else
+          Req.Response.new(status: 200)
+        end
+      end
+
+      Req.new(
+        adapter: CaptureAdapter,
+        url: "https://b.s3.us-east-1.amazonaws.com/key",
+        headers: %{
+          "host" => "b.s3.us-east-1.amazonaws.com",
+          "x-amz-security-token" => "CALLER-SUPPLIED-TOKEN"
+        },
+        redirect_log_level: false
+      )
+      |> Req.Request.put_private(:capture_test_pid, self())
+      |> Req.Request.put_private(:capture_redirect_fun, redirect_fun)
+      |> AWSReq.attach(credentials: creds_with_token, service: "s3")
+      |> Req.request!()
+
+      assert_receive {:captured_request,
+                      %{url: %URI{host: "b.s3.us-east-1.amazonaws.com"}} = first_req}
+
+      assert Req.Request.get_header(first_req, "authorization") != []
+      assert Req.Request.get_header(first_req, "x-amz-security-token") == ["SESSION-TOKEN"]
+
+      assert_receive {:captured_request, %{url: %URI{host: "target.example"}} = redirected_req}
+      assert Req.Request.get_header(redirected_req, "authorization") == []
+      assert Req.Request.get_header(redirected_req, "x-amz-security-token") == []
+      assert Req.Request.get_header(redirected_req, "x-amz-date") == []
+      assert Req.Request.get_header(redirected_req, "x-amz-content-sha256") == []
+      assert Req.Request.get_header(redirected_req, "host") == []
+    end
+
+    test "trusted cross-origin redirect re-signs with new host and region", %{
+      credentials: credentials
+    } do
+      creds_with_token = %{credentials | session_token: "SESSION-TOKEN"}
+
+      redirect_fun = fn req ->
+        if req.url.host == "b.s3.us-east-1.amazonaws.com" do
+          Req.Response.new(status: 301)
+          |> Req.Response.put_header("location", "https://b.s3.eu-west-1.amazonaws.com/key")
+        else
+          Req.Response.new(status: 200)
+        end
+      end
+
+      Req.new(
+        adapter: CaptureAdapter,
+        url: "https://b.s3.us-east-1.amazonaws.com/key",
+        headers: %{"host" => "b.s3.us-east-1.amazonaws.com"},
+        redirect_trusted: true,
+        redirect_log_level: false
+      )
+      |> Req.Request.put_private(:capture_test_pid, self())
+      |> Req.Request.put_private(:capture_redirect_fun, redirect_fun)
+      |> AWSReq.attach(credentials: creds_with_token, service: "s3")
+      |> Req.request!()
+
+      assert_receive {:captured_request,
+                      %{url: %URI{host: "b.s3.us-east-1.amazonaws.com"}} = first_req}
+
+      assert Req.Request.get_header(first_req, "host") == ["b.s3.us-east-1.amazonaws.com"]
+      assert [first_auth] = Req.Request.get_header(first_req, "authorization")
+      assert first_auth =~ "/us-east-1/s3/aws4_request"
+
+      assert_receive {:captured_request,
+                      %{url: %URI{host: "b.s3.eu-west-1.amazonaws.com"}} = second_req}
+
+      assert Req.Request.get_header(second_req, "host") == ["b.s3.eu-west-1.amazonaws.com"]
+      assert [second_auth] = Req.Request.get_header(second_req, "authorization")
+      assert second_auth =~ "/eu-west-1/s3/aws4_request"
+      refute second_auth == first_auth
+    end
+
+    test "same-origin redirect re-signs without requiring redirect_trusted", %{
+      credentials: credentials
+    } do
+      redirect_fun = fn req ->
+        if req.url.path == "/old" do
+          Req.Response.new(status: 302)
+          |> Req.Response.put_header("location", "/new")
+        else
+          Req.Response.new(status: 200)
+        end
+      end
+
+      Req.new(
+        adapter: CaptureAdapter,
+        url: "https://b.s3.us-east-1.amazonaws.com/old",
+        redirect_log_level: false
+      )
+      |> Req.Request.put_private(:capture_test_pid, self())
+      |> Req.Request.put_private(:capture_redirect_fun, redirect_fun)
+      |> AWSReq.attach(credentials: credentials, service: "s3")
+      |> Req.request!()
+
+      assert_receive {:captured_request, %{url: %URI{path: "/old"}} = first_req}
+      assert [first_auth] = Req.Request.get_header(first_req, "authorization")
+
+      assert_receive {:captured_request, %{url: %URI{path: "/new"}} = second_req}
+      assert [second_auth] = Req.Request.get_header(second_req, "authorization")
+      refute second_auth == first_auth
+    end
   end
 
   defp run_and_capture_request(request) do
