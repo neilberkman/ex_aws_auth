@@ -25,27 +25,28 @@ jobs:
             otp: "26.2.5.21"
           # Latest 1.17 series
           - elixir: "1.17.3"
-            otp: "27.3.4.17"
+            otp: "27.3.4.19"
           # Latest 1.18 series with OTP 28
-          - elixir: "1.18.5"
-            otp: "28.5.0.6"
+          - elixir: "1.18.6"
+            otp: "28.5.0.8"
           # Latest 1.19 series with OTP 28
-          - elixir: "1.19.6"
-            otp: "28.5.0.6"
+          - elixir: "1.19.7"
+            otp: "28.5.0.8"
           # Latest 1.20 series with OTP 29 (primary target: runs format/credo/dialyzer)
-          - elixir: "1.20.4"
-            otp: "29.0.6"
+          - elixir: "1.20.5"
+            otp: "29.1.2"
+            primary: true
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Elixir
-        uses: erlef/setup-beam@v1
+        uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
         with:
           elixir-version: ${{ matrix.elixir }}
           otp-version: ${{ matrix.otp }}
 
       - name: Restore dependencies cache
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             deps
@@ -62,29 +63,80 @@ jobs:
         run: MIX_ENV=test mix compile --warnings-as-errors
 
       - name: Check formatting
-        if: ${{ matrix.elixir == '1.20.4' && matrix.otp == '29.0.6' }}
+        if: ${{ matrix.primary }}
         run: mix format --check-formatted
 
       - name: Run tests
         run: mix test --trace
 
       - name: Run Credo
-        if: ${{ matrix.elixir == '1.20.4' && matrix.otp == '29.0.6' }}
+        if: ${{ matrix.primary }}
         run: mix credo --strict
 
       - name: Run Dialyzer
-        if: ${{ matrix.elixir == '1.20.4' && matrix.otp == '29.0.6' }}
+        if: ${{ matrix.primary }}
         run: mix dialyzer --format github
 
       - name: Set up Python
-        if: ${{ matrix.elixir == '1.20.4' && matrix.otp == '29.0.6' }}
-        uses: actions/setup-python@v5
+        if: ${{ matrix.primary }}
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
 
       - name: Verify botocore-generated artifacts
-        if: ${{ matrix.elixir == '1.20.4' && matrix.otp == '29.0.6' }}
+        if: ${{ matrix.primary }}
         run: |
-          python -m pip install --quiet botocore==1.42.78
+          python -m pip install --quiet --require-hashes --only-binary :all: --no-deps -r scripts/requirements.txt
           python scripts/gen_signing_names.py --check
           python test/support/botocore_vectors.py --check
+
+  min-req:
+    name: Test (minimum Req)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
+        with:
+          elixir-version: "1.20.5"
+          otp-version: "29.1.2"
+
+      # mix.exs declares `req ~> 0.7`; the lockfile only ever exercises the
+      # newest release. Pin the floor here so the declared range stays true.
+      - name: Pin Req to the lowest supported version
+        run: |
+          sed -i 's/{:req, "~> 0.7", optional: true}/{:req, "0.7.0", optional: true}/' mix.exs
+          grep -q '{:req, "0.7.0", optional: true}' mix.exs
+          mix deps.unlock req
+          mix deps.get
+
+      - name: Compile with warnings as errors
+        run: MIX_ENV=test mix compile --warnings-as-errors
+
+      - name: Run tests
+        run: mix test
+
+  no-req:
+    name: Compile without Req
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
+        with:
+          elixir-version: "1.20.5"
+          otp-version: "29.1.2"
+
+      # Req is an optional dependency, so the library has to compile in a
+      # project that does not have it.
+      - name: Remove the optional Req dependency
+        run: |
+          sed -i '/{:req, "~> 0.7", optional: true},/d' mix.exs
+          ! grep -q '{:req,' mix.exs
+          mix deps.unlock --unused
+          mix deps.get
+
+      - name: Compile with warnings as errors
+        run: MIX_ENV=prod mix compile --warnings-as-errors
