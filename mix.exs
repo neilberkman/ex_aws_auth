@@ -33,7 +33,7 @@ defmodule ExAWSAuth.MixProject do
   defp deps do
     [
       # Optional: Req plugin support
-      {:req, "~> 0.5", optional: true},
+      {:req, "~> 0.7", optional: true},
       {:jason, "~> 1.4", optional: true},
 
       # Dev/Test dependencies

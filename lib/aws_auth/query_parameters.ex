@@ -1,6 +1,20 @@
 defmodule AWSAuth.QueryParameters do
   @moduledoc false
 
+  # Query parameters this module generates. Any spelling of these already in the
+  # caller's URL is dropped (case-insensitively) so the presigned URL carries
+  # exactly one of each.
+  @sigv4_params [
+    "x-amz-algorithm",
+    "x-amz-credential",
+    "x-amz-date",
+    "x-amz-expires",
+    "x-amz-signedheaders",
+    "x-amz-signature",
+    "x-amz-security-token",
+    "x-amz-s3session-token"
+  ]
+
   # http://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-query-string-auth.html
   def sign(
         access_key,
@@ -15,7 +29,9 @@ defmodule AWSAuth.QueryParameters do
         session_token \\ nil,
         opts \\ []
       ) do
+    AWSAuth.Utils.validate_credentials!(access_key, secret_key)
     uri = URI.parse(url)
+    AWSAuth.Utils.validate_host!(uri)
 
     http_method = String.upcase(http_method)
     region = String.downcase(region)
@@ -47,7 +63,7 @@ defmodule AWSAuth.QueryParameters do
           uri.query
           |> URI.query_decoder()
           |> Enum.reject(fn {key, _value} ->
-            key in ["X-Amz-Signature", "X-Amz-Security-Token", "X-Amz-S3session-Token"]
+            String.downcase(key, :ascii) in @sigv4_params
           end)
       end
 
@@ -98,7 +114,9 @@ defmodule AWSAuth.QueryParameters do
     params = put_param(params, "X-Amz-Signature", signature)
     query_string = AWSAuth.Utils.canonical_query_string(params)
 
-    "#{uri.scheme}://#{uri.authority}#{uri.path || "/"}?#{query_string}"
+    # Built from host and port, not `uri.authority`, so userinfo never reaches
+    # the presigned URL and the authority matches the signed `host`.
+    "#{uri.scheme}://#{AWSAuth.Utils.host_header(uri)}#{uri.path || "/"}?#{query_string}"
   end
 
   defp resolve_uri_escape_path(opts, service) do

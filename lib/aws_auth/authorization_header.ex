@@ -15,7 +15,9 @@ defmodule AWSAuth.AuthorizationHeader do
         session_token \\ nil,
         opts \\ []
       ) do
+    AWSAuth.Utils.validate_credentials!(access_key, secret_key)
     uri = URI.parse(url)
+    AWSAuth.Utils.validate_host!(uri)
 
     params =
       case uri.query do
