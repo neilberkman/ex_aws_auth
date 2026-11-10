@@ -25,7 +25,7 @@ Add `ex_aws_auth` to your dependencies in `mix.exs`:
 def deps do
   [
     {:ex_aws_auth, "~> 1.5"},
-    {:req, "~> 0.5"}  # Optional, for Req plugin
+    {:req, "~> 0.7"}  # Optional, for Req plugin
   ]
 end
 ```

@@ -39,7 +39,7 @@ defmodule AWSAuth.Utils do
   def normalize_headers(headers) when is_map(headers) do
     headers
     |> Enum.map(fn {key, value} ->
-      {String.downcase(to_string(key), :ascii), normalize_entry_value(value)}
+      {normalize_header_name!(key), normalize_entry_value(value)}
     end)
     |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
     |> Map.new(fn {name, values} ->
@@ -57,10 +57,60 @@ defmodule AWSAuth.Utils do
   def normalize_headers(headers) when is_list(headers) do
     headers
     |> Enum.map(fn {key, value} ->
-      {String.downcase(to_string(key), :ascii), normalize_entry_value(value)}
+      {normalize_header_name!(key), normalize_entry_value(value)}
     end)
     |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
     |> Map.new(fn {name, values} -> {name, Enum.join(values, ",")} end)
+  end
+
+  # RFC 7230 `token`: the only bytes allowed in a header field name.
+  @header_name_regex ~r/\A[!#$%&'*+\-.^_`|~0-9A-Za-z]+\z/
+
+  defp normalize_header_name!(name) do
+    name = to_string(name)
+
+    if !Regex.match?(@header_name_regex, name) do
+      raise ArgumentError, "invalid header name: #{inspect(name)}"
+    end
+
+    String.downcase(name, :ascii)
+  end
+
+  @doc """
+  Raises `ArgumentError` unless `access_key` and `secret_key` are non-empty
+  binaries. The message never includes either value.
+  """
+  def validate_credentials!(access_key, secret_key) do
+    if !(is_binary(access_key) and access_key != "") do
+      raise ArgumentError, "AWS access key ID is missing; expected a non-empty string"
+    end
+
+    validate_secret_key!(secret_key)
+  end
+
+  @doc """
+  Raises `ArgumentError` unless `secret_key` is a non-empty binary. The message
+  never includes the value.
+  """
+  def validate_secret_key!(secret_key) do
+    if !(is_binary(secret_key) and secret_key != "") do
+      raise ArgumentError, "AWS secret access key is missing; expected a non-empty string"
+    end
+
+    :ok
+  end
+
+  @doc """
+  Raises `ArgumentError` unless `uri` has a host and an `http`, `https`, `ws` or
+  `wss` scheme. A URL passed without a scheme parses with no host, and a
+  scheme-relative or other-scheme URL cannot be sent as a signed AWS request.
+  """
+  def validate_host!(%URI{scheme: scheme, host: host})
+      when scheme in ["http", "https", "ws", "wss"] and is_binary(host) and host != "", do: :ok
+
+  def validate_host!(%URI{}) do
+    raise ArgumentError,
+          "cannot sign a URL without a host; pass an absolute http(s) or ws(s) URL"
   end
 
   defp normalize_entry_value(values) when is_list(values) do
@@ -129,6 +179,10 @@ defmodule AWSAuth.Utils do
   def host_header(%URI{host: nil}), do: nil
 
   def host_header(%URI{host: host, port: port, scheme: scheme}) do
+    # Hostnames are case-insensitive and clients send them lowercase (always, on
+    # HTTP/2); botocore signs `urlsplit(url).hostname`, which is lowercased.
+    host = String.downcase(host, :ascii)
+
     bracketed_host =
       if String.contains?(host, ":") and not String.starts_with?(host, "[") do
         "[#{host}]"
@@ -494,6 +548,10 @@ defmodule AWSAuth.Utils do
 
   defp legacy_s3_label?(label)
        when label in ["s3-fips", "s3-dualstack", "s3-accelerate", "s3-global"], do: true
+
+  # Static website endpoints (`<bucket>.s3-website-<region>`) are not S3 API
+  # endpoints and do not accept SigV4.
+  defp legacy_s3_label?("s3-website" <> _rest), do: false
 
   defp legacy_s3_label?("s3-" <> region), do: Regex.match?(~r/^[a-z0-9-]+-\d$/, region)
   defp legacy_s3_label?(_label), do: false

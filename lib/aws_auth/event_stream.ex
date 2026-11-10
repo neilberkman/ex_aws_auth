@@ -52,6 +52,15 @@ defmodule AWSAuth.EventStream do
   @type_string 7
   @type_timestamp 8
 
+  # Limits from the event stream encoding: the name length is one byte and a
+  # header value is at most 32767 bytes.
+  @max_header_name_bytes 255
+  @max_header_value_bytes 32_767
+
+  # Per-message limits enforced by AWS and by botocore's decoder.
+  @max_headers_bytes 128 * 1024
+  @max_payload_bytes 24 * 1024 * 1024
+
   @doc """
   Signs a single event and returns the chunk signature as a lowercase hex string.
 
@@ -93,6 +102,7 @@ defmodule AWSAuth.EventStream do
         opts \\ []
       )
       when is_binary(prior_signature) and is_binary(header_bytes) do
+    Utils.validate_secret_key!(credentials.secret_access_key)
     region = (opts[:region] || credentials.region || "us-east-1") |> String.downcase()
     service = to_string(service)
 
@@ -174,8 +184,12 @@ defmodule AWSAuth.EventStream do
   @doc """
   Encodes a byte-array header (value type 6) into the AWS event stream binary
   format. The value is length-prefixed with a 16-bit big-endian length.
+
+  Raises `ArgumentError` if `name` is longer than 255 bytes or `value` is longer
+  than 32767 bytes.
   """
   def encode_byte_array_header(name, value) when is_binary(value) do
+    validate_header_value_size!(name, value)
     encode_header(name, @type_byte_array, <<byte_size(value)::big-16, value::binary>>)
   end
 
@@ -186,8 +200,16 @@ defmodule AWSAuth.EventStream do
   Used for application message headers such as `:content-type`, `:event-type`,
   and `:message-type` on the events some services expect (e.g. Bedrock
   bidirectional streaming input chunks).
+
+  Raises `ArgumentError` if `name` is longer than 255 bytes or `value` is longer
+  than 32767 bytes.
   """
   def encode_string_header(name, value) when is_binary(value) do
+    if !String.valid?(value) do
+      raise ArgumentError, "event stream string header #{inspect(name)} value must be valid UTF-8"
+    end
+
+    validate_header_value_size!(name, value)
     encode_header(name, @type_string, <<byte_size(value)::big-16, value::binary>>)
   end
 
@@ -203,9 +225,23 @@ defmodule AWSAuth.EventStream do
       [headers bytes]
       [payload bytes]
       [message CRC32      :: big-32]   # crc32 of everything before it
+
+  Raises `ArgumentError` if `headers` is over 128 KiB or `payload` is over
+  24 MiB, the per-message limits AWS enforces.
   """
   def encode_message(headers, payload) when is_binary(headers) and is_binary(payload) do
     headers_length = byte_size(headers)
+
+    if headers_length > @max_headers_bytes do
+      raise ArgumentError,
+            "event stream headers are #{headers_length} bytes; the maximum is #{@max_headers_bytes}"
+    end
+
+    if byte_size(payload) > @max_payload_bytes do
+      raise ArgumentError,
+            "event stream payload is #{byte_size(payload)} bytes; the maximum is #{@max_payload_bytes}"
+    end
+
     total_length = 16 + headers_length + byte_size(payload)
 
     prelude = <<total_length::big-32, headers_length::big-32>>
@@ -218,11 +254,36 @@ defmodule AWSAuth.EventStream do
   end
 
   defp encode_header(name, type, value) do
+    if !(is_binary(name) and String.valid?(name)) do
+      raise ArgumentError,
+            "event stream header name must be a UTF-8 string, got: #{inspect(name)}"
+    end
+
+    if byte_size(name) == 0 or byte_size(name) > @max_header_name_bytes do
+      raise ArgumentError,
+            "event stream header name must be 1..#{@max_header_name_bytes} bytes, got #{byte_size(name)}"
+    end
+
     <<byte_size(name)::8, name::binary, type::8, value::binary>>
   end
 
+  defp validate_header_value_size!(name, value) do
+    if byte_size(value) > @max_header_value_bytes do
+      raise ArgumentError,
+            "event stream header #{inspect(name)} value is #{byte_size(value)} bytes; the maximum is #{@max_header_value_bytes}"
+    end
+  end
+
   defp to_naive(%NaiveDateTime{} = t), do: t
-  defp to_naive(%DateTime{} = t), do: DateTime.to_naive(t)
+
+  # Convert through the Unix instant so a non-UTC `DateTime` signs with the same
+  # UTC wall time that `to_unix_ms/1` puts in the `:date` header.
+  defp to_naive(%DateTime{} = t) do
+    t
+    |> DateTime.to_unix(:microsecond)
+    |> DateTime.from_unix!(:microsecond)
+    |> DateTime.to_naive()
+  end
 
   defp to_unix_ms(%DateTime{} = t), do: DateTime.to_unix(t, :millisecond)
 
