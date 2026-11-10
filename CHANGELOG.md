@@ -1,3 +1,29 @@
+## [1.6.0] - 2026-11-10
+
+### Breaking
+
+- The optional `req` dependency now requires `~> 0.7` (was `~> 0.5`). Req before 0.7.0 does not re-run request steps when it follows a redirect, so on those versions the plugin neither re-signed nor stripped signing headers on a redirect: `x-amz-security-token` and the other generated headers were forwarded to the redirect target, and same-origin redirects carried a stale signature.
+- Req plugin: `redirect_trusted: true` re-signs a cross-origin redirect only when the destination is an `https` endpoint of the same AWS service (for example an S3 region redirect). A trusted redirect to any other host, including hosts under `amazonaws.com` that are not that service's API (EC2 public DNS, S3 website endpoints) and hosts `AWSAuth` cannot map to a service (API Gateway, OpenSearch domains, Lambda function URLs, S3-compatible servers), or to plain `http`, is now stripped of signing headers like an untrusted one.
+- Req plugin: streaming a request body over plain `http` raises unless `payload: :unsigned` is passed to `attach/2`. Over `https` a streamed body is still signed as `UNSIGNED-PAYLOAD` automatically.
+
+### Security
+
+- Signing raises `ArgumentError` when the access key ID or secret access key is `nil` or empty, instead of returning a signature computed with an empty key. `AWSAuth.EventStream` checks only the secret, which is all event signing uses.
+- Signing raises `ArgumentError` for a URL without a host (for example one passed without a scheme) or with a scheme other than `http`, `https`, `ws` or `wss`.
+- Header names that are not RFC 7230 tokens (containing CR, LF, spaces, `:` and so on) raise `ArgumentError`.
+- Presigned URLs drop every case variant of the SigV4 query parameters (`x-amz-expires`, `X-AMZ-SIGNATURE`, ...) found in the input URL, and are built from host and port so userinfo in the input URL is not carried over.
+- `AWSAuth.EventStream.encode_string_header/2` and `encode_byte_array_header/2` raise when the value is over 32767 bytes or the name is empty or over 255 bytes; previously the length prefix wrapped and the excess bytes were framed as further headers. Header names and string values must be valid UTF-8, and `encode_message/2` raises when the headers exceed 128 KiB or the payload exceeds 24 MiB.
+- Req plugin: a cross-origin redirect that is not re-signed also strips every caller-supplied `x-amz-*` header (for example SSE-C keys).
+
+### Fixed
+
+- The library compiles in a project that does not have the optional `req` dependency; `AWSAuth.Req` is only defined when Req is available.
+- The signed `host` and the host in presigned URLs are lowercased, as botocore does; a URL with an uppercase hostname previously signed a `host` value that differs from what HTTP clients send.
+- S3 static website hostnames (`<bucket>.s3-website-<region>.amazonaws.com`) are no longer detected as S3 API endpoints.
+- `AWSAuth.EventStream` converts a non-UTC `DateTime` to UTC before signing; previously the signed timestamp used the local wall time while the `:date` header carried the true instant.
+
+---
+
 ## [1.5.0] - 2026-10-21
 
 ### Fixed

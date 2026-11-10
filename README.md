@@ -24,7 +24,7 @@ Add `ex_aws_auth` to your dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:ex_aws_auth, "~> 1.5"},
+    {:ex_aws_auth, "~> 1.6"},
     {:req, "~> 0.7"}  # Optional, for Req plugin
   ]
 end
